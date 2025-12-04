@@ -1,55 +1,99 @@
-
-
 <!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI Code Helper</title>
   <style>
+    * { box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, sans-serif; max-width: 1080px; margin: 20px auto; padding: 0 12px; }
-    label { font-weight: 600; }
-    select, textarea, input { width: 100%; margin: 4px 0 12px; }
-    textarea { min-height: 120px; font-family: monospace; }
-    .row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
-    .row > * { flex: 1; }
-    button { padding: 6px 12px; cursor: pointer; }
-    pre { background: #f3f3f3; padding: 8px; overflow: auto; white-space: pre-wrap; }
+    label { font-weight: 600; display: block; margin-bottom: 4px; }
+    select, textarea, input[type="text"], input[type="email"] { width: 100%; margin: 0 0 12px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+    textarea { min-height: 120px; font-family: monospace; resize: vertical; }
+    .row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 12px; flex-wrap: wrap; }
+    .row > * { flex: 1; min-width: 200px; }
+    
+    button { padding: 8px 16px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #f7f7f7; font-size: 14px; transition: all 0.2s; }
+    button:hover { background: #e8e8e8; }
+    button:active { transform: scale(0.98); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    
+    .btn-primary { background: #2563eb; color: white; border-color: #2563eb; font-weight: 600; }
+    .btn-primary:hover { background: #1d4ed8; }
+    
+    pre { background: #f3f3f3; padding: 12px; overflow: auto; white-space: pre-wrap; border-radius: 4px; font-size: 13px; }
     .small { font-size: 12px; color: #555; }
-    .file-list { border: 1px solid #ddd; padding: 8px; margin-top: 8px; }
-    .file-item { display: flex; flex-direction: column; border-bottom: 1px solid #eee; padding: 6px 0; }
+    .file-list { border: 1px solid #ddd; padding: 12px; margin-top: 8px; border-radius: 4px; }
+    .file-item { display: flex; flex-direction: column; border-bottom: 1px solid #eee; padding: 8px 0; }
     .file-item:last-child { border-bottom: none; }
     .file-path { font-family: monospace; font-size: 13px; }
-    .file-reason { font-size: 12px; color: #555; }
-    .file-actions { margin-top: 4px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .file-reason { font-size: 12px; color: #555; margin-top: 4px; }
+    .file-actions { margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; }
     .cost-warning { color: #b34700; font-size: 12px; }
     .cost-normal { color: #008000; font-size: 12px; }
-    .section { margin-top: 24px; }
+    .section { margin-top: 28px; padding-bottom: 20px; border-bottom: 1px solid #eee; }
+    .section:last-child { border-bottom: none; }
 
-    .tabs { display: flex; gap: 8px; margin: 16px 0; border-bottom: 1px solid #ddd; padding-bottom: 8px; }
-    .tab { padding: 6px 12px; border: 1px solid #ddd; border-bottom: none; background: #f7f7f7; cursor: pointer; }
-    .tab.active { background: #fff; font-weight: 600; }
+    .tabs { display: flex; gap: 0; margin: 16px 0; border-bottom: 2px solid #ddd; }
+    .tab { padding: 10px 20px; border: none; background: transparent; cursor: pointer; font-size: 14px; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+    .tab:hover { background: #f5f5f5; }
+    .tab.active { border-bottom-color: #2563eb; font-weight: 600; color: #2563eb; }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
+
+    h2 { margin: 0 0 12px; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+    h3 { margin: 16px 0 8px; font-size: 14px; color: #333; }
+
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ccc; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
+    .toast { padding: 12px 16px; border-radius: 6px; color: white; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideIn 0.3s ease; max-width: 320px; }
+    .toast-success { background: #16a34a; }
+    .toast-error { background: #dc2626; }
+    .toast-info { background: #2563eb; }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    .empty-state { text-align: center; padding: 24px; color: #666; }
+    .empty-state-icon { font-size: 32px; margin-bottom: 8px; }
+
+    .kbd { background: #f3f3f3; border: 1px solid #ddd; border-radius: 3px; padding: 2px 6px; font-size: 11px; font-family: monospace; }
+
+    @media (max-width: 600px) {
+      body { margin: 10px auto; padding: 0 8px; }
+      .row { flex-direction: column; }
+      .row > * { min-width: 100%; }
+      .tabs { overflow-x: auto; }
+      .tab { padding: 8px 12px; font-size: 13px; white-space: nowrap; }
+      h1 { font-size: 22px; }
+      h2 { font-size: 16px; }
+      button { width: 100%; }
+      .file-actions button { width: auto; }
+      .toast-container { left: 10px; right: 10px; }
+      .toast { max-width: 100%; }
+    }
   </style>
 </head>
 <body>
+  <div class="toast-container" id="toastContainer"></div>
+
   <h1>AI Code Helper</h1>
 
   <div class="row">
     <div>
-      <label for="projectSelect">Project (GitHub repo)</label>
-      <select id="projectSelect"></select>
+      <label for="projectSelect" title="Select the GitHub repository to work with">Project (GitHub repo)</label>
+      <select id="projectSelect" title="Choose a project from your repositories"></select>
       <div class="small">
         <label><input type="checkbox" id="pinnedOnly" checked /> Show pinned only</label>
       </div>
     </div>
-    <button id="refreshProjectsBtn">Refresh</button>
+    <button id="refreshProjectsBtn" title="Reload your project list">Refresh</button>
   </div>
 
   <div class="row">
     <div>
-      <label for="modeSelect">Mode</label>
-      <select id="modeSelect">
+      <label for="modeSelect" title="Choose the AI model to use">Mode</label>
+      <select id="modeSelect" title="Standard is faster, Deep dive is more thorough">
         <option value="standard">Standard (mini)</option>
         <option value="deep">Deep dive (stronger model)</option>
       </select>
@@ -58,39 +102,40 @@
   </div>
 
   <div class="tabs">
-    <button id="tabWork" class="tab active">Work</button>
-    <button id="tabSaved" class="tab">Saved</button>
+    <button id="tabWork" class="tab active" title="Create and edit code">Work</button>
+    <button id="tabSaved" class="tab" title="View your saved ideas and plans">Saved</button>
   </div>
 
-  <!-- Work tab: Brainstorm, Plan, Edit, Debug -->
   <div id="workTab" class="tab-content active">
     <div class="section">
-      <h2>0. Brainstorm / new app ideas</h2>
+      <h2>💡 Brainstorm / new app ideas</h2>
       <div class="small">
         Use this for "would it be possible to build" questions.
         You can select a project to ground the idea in an existing codebase, or leave it unselected for a new idea.
+        <span class="kbd">Ctrl+Enter</span> to submit.
       </div>
       <label for="ideaText">Idea or question</label>
-      <textarea id="ideaText" placeholder="Example: Would it be possible to add a client portal where clients can upload PDFs and see invoices?"></textarea>
-      <button id="ideasBtn">Brainstorm</button>
+      <textarea id="ideaText" placeholder="Example: Would it be possible to add a client portal where clients can upload PDFs and see invoices?" title="Describe your idea or question"></textarea>
+      <button id="ideasBtn" class="btn-primary" title="Generate ideas based on your input">Brainstorm</button>
       <div id="ideasCost" class="small"></div>
 
       <h3>Brainstorming output</h3>
-      <pre id="ideasOutput">(no brainstorming yet)</pre>
-      <button id="starCurrentIdeaBtn" class="small">⭐ Star this idea</button>
+      <pre id="ideasOutput" class="empty-state"><span class="empty-state-icon">💭</span><br>Enter an idea above and click Brainstorm to get started</pre>
+      <button id="starCurrentIdeaBtn" class="small" title="Save this idea for later">⭐ Star this idea</button>
       <span id="starCurrentIdeaStatus" class="small"></span>
     </div>
 
     <div class="section">
-      <h2>1. Plan a change</h2>
+      <h2>📋 Plan a change</h2>
+      <div class="small"><span class="kbd">Ctrl+Enter</span> to submit.</div>
       <label for="task">Task / feature request</label>
-      <textarea id="task" placeholder="Example: Add an optional notes field to the client onboarding form and save it to the DB and dashboard."></textarea>
-      <button id="planBtn">Plan change</button>
+      <textarea id="task" placeholder="Example: Add an optional notes field to the client onboarding form and save it to the DB and dashboard." title="Describe the feature or change you want to make"></textarea>
+      <button id="planBtn" class="btn-primary" title="Generate a step-by-step plan">Plan change</button>
       <div id="planCost" class="small"></div>
 
       <h3>Plan</h3>
-      <pre id="planSummary">(no plan yet)</pre>
-      <button id="starCurrentTaskBtn" class="small">⭐ Star this plan</button>
+      <pre id="planSummary" class="empty-state"><span class="empty-state-icon">📝</span><br>Describe a task above and click Plan change</pre>
+      <button id="starCurrentTaskBtn" class="small" title="Save this plan for later">⭐ Star this plan</button>
       <span id="starCurrentTaskStatus" class="small"></span>
 
       <div id="filesContainer" class="file-list" style="display:none;">
@@ -100,45 +145,45 @@
     </div>
 
     <div class="section">
-      <h2>2. Update a file from the plan</h2>
+      <h2>✏️ Update a file from the plan</h2>
       <div class="small">
         The planner will suggest files. Click "Use this file" to populate the fields below, then "Update file".
+        <span class="kbd">Ctrl+Enter</span> to submit.
       </div>
       <label for="filePath">File path</label>
-      <input id="filePath" placeholder="e.g. src/components/ClientForm.tsx" />
+      <input type="text" id="filePath" placeholder="e.g. src/components/ClientForm.tsx" title="Enter the file path to update" />
 
       <label for="subtask">Subtask for this file</label>
-      <textarea id="subtask" placeholder="Short, focused change description for this file. The planner can generate this for you."></textarea>
+      <textarea id="subtask" placeholder="Short, focused change description for this file. The planner can generate this for you." title="Describe the specific change for this file"></textarea>
 
-      <button id="editBtn">Update file</button>
+      <button id="editBtn" class="btn-primary" title="Generate the updated file content">Update file</button>
       <div id="editCost" class="small"></div>
 
       <h3>Updated file content</h3>
-      <textarea id="updatedContent" placeholder="Updated file content will appear here for you to copy into Replit or your repo."></textarea>
+      <textarea id="updatedContent" placeholder="Updated file content will appear here for you to copy into Replit or your repo." title="Copy this content to your file"></textarea>
     </div>
 
     <div class="section">
-      <h2>3. Debug console errors</h2>
-      <div class="small">Paste console output or stack traces here and select a project if relevant.</div>
+      <h2>🐛 Debug console errors</h2>
+      <div class="small">Paste console output or stack traces here and select a project if relevant. <span class="kbd">Ctrl+Enter</span> to submit.</div>
       <label for="errorText">Error output</label>
-      <textarea id="errorText" placeholder="Paste console errors, stack traces, or log snippets here."></textarea>
-      <button id="debugBtn">Explain and suggest fixes</button>
+      <textarea id="errorText" placeholder="Paste console errors, stack traces, or log snippets here." title="Paste error messages here"></textarea>
+      <button id="debugBtn" class="btn-primary" title="Get an explanation and suggested fixes">Explain and suggest fixes</button>
       <div id="debugCost" class="small"></div>
 
       <h3>Debug explanation</h3>
-      <pre id="debugOutput">(no debug request yet)</pre>
+      <pre id="debugOutput" class="empty-state"><span class="empty-state-icon">🔍</span><br>Paste an error above and click Explain to get help</pre>
     </div>
   </div>
 
-  <!-- Saved tab: starred and all ideas/plans -->
   <div id="savedTab" class="tab-content">
     <div class="section">
-      <h2>Saved ideas</h2>
+      <h2>💾 Saved ideas</h2>
       <div class="small">
         These are brainstorms you have run. Filter by project and starred status.
       </div>
       <div class="row">
-        <button id="refreshIdeasBtn">Refresh ideas</button>
+        <button id="refreshIdeasBtn" title="Reload saved ideas">Refresh ideas</button>
         <div class="small">
           <label><input type="checkbox" id="ideasStarredOnly" /> Show starred only</label>
         </div>
@@ -148,12 +193,12 @@
     </div>
 
     <div class="section">
-      <h2>Saved plans / tasks</h2>
+      <h2>📁 Saved plans / tasks</h2>
       <div class="small">
         These are plans you have run. Filter by project and starred status.
       </div>
       <div class="row">
-        <button id="refreshTasksBtn">Refresh plans</button>
+        <button id="refreshTasksBtn" title="Reload saved plans">Refresh plans</button>
         <div class="small">
           <label><input type="checkbox" id="tasksStarredOnly" /> Show starred only</label>
         </div>
@@ -164,6 +209,25 @@
   </div>
 
   <script>
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = 'toast toast-' + type;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => { toast.remove(); }, 4000);
+    }
+
+    function setLoading(button, isLoading, originalText) {
+      if (isLoading) {
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner"></span> Working...';
+      } else {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+
     const projectSelect = document.getElementById("projectSelect");
     const pinnedOnlyCheckbox = document.getElementById("pinnedOnly");
     const refreshProjectsBtn = document.getElementById("refreshProjectsBtn");
@@ -175,7 +239,6 @@
     const workTab = document.getElementById("workTab");
     const savedTab = document.getElementById("savedTab");
 
-    // Brainstorm elements
     const ideaTextInput = document.getElementById("ideaText");
     const ideasBtn = document.getElementById("ideasBtn");
     const ideasOutput = document.getElementById("ideasOutput");
@@ -184,7 +247,6 @@
     const starCurrentIdeaStatus = document.getElementById("starCurrentIdeaStatus");
     let lastIdeaId = null;
 
-    // Plan elements
     const taskInput = document.getElementById("task");
     const planBtn = document.getElementById("planBtn");
     const planSummary = document.getElementById("planSummary");
@@ -195,20 +257,17 @@
     const starCurrentTaskStatus = document.getElementById("starCurrentTaskStatus");
     let lastTaskId = null;
 
-    // Edit elements
     const filePathInput = document.getElementById("filePath");
     const subtaskInput = document.getElementById("subtask");
     const editBtn = document.getElementById("editBtn");
     const updatedContent = document.getElementById("updatedContent");
     const editCost = document.getElementById("editCost");
 
-    // Debug elements
     const errorTextInput = document.getElementById("errorText");
     const debugBtn = document.getElementById("debugBtn");
     const debugOutput = document.getElementById("debugOutput");
     const debugCost = document.getElementById("debugCost");
 
-    // Saved tab elements
     const refreshIdeasBtn = document.getElementById("refreshIdeasBtn");
     const ideasList = document.getElementById("ideasList");
     const ideasListHint = document.getElementById("ideasListHint");
@@ -231,7 +290,6 @@
     updateModeHint();
     modeSelect.addEventListener("change", updateModeHint);
 
-    // Tabs
     function activateTab(tabName) {
       if (tabName === "work") {
         tabWork.classList.add("active");
@@ -249,7 +307,6 @@
     tabWork.addEventListener("click", () => activateTab("work"));
     tabSaved.addEventListener("click", () => activateTab("saved"));
 
-    // Projects
     async function loadProjects() {
       const pinnedOnly = pinnedOnlyCheckbox.checked ? "1" : "0";
       projectSelect.innerHTML = "<option>Loading...</option>";
@@ -275,34 +332,31 @@
       } catch (err) {
         console.error(err);
         projectSelect.innerHTML = "<option>Error loading projects</option>";
+        showToast("Failed to load projects", "error");
       }
     }
 
-    pinnedOnlyCheckbox.addEventListener("change", () => {
-      loadProjects();
-    });
-    refreshProjectsBtn.addEventListener("click", () => {
-      loadProjects();
-    });
+    pinnedOnlyCheckbox.addEventListener("change", () => { loadProjects(); });
+    refreshProjectsBtn.addEventListener("click", () => { loadProjects(); });
 
     projectSelect.addEventListener("change", () => {
-      // Filter saved lists when project changes
       loadSavedIdeas();
       loadSavedTasks();
     });
 
-    // Brainstorm
-    ideasBtn.addEventListener("click", async () => {
+    async function handleBrainstorm() {
       const repoFullName = projectSelect.value || "";
       const ideaText = ideaTextInput.value.trim();
       const mode = modeSelect.value === "deep" ? "deep" : "standard";
 
       if (!ideaText) {
-        alert("Enter an idea or question first.");
+        showToast("Enter an idea or question first", "error");
         return;
       }
 
-      ideasOutput.textContent = "Thinking through the idea...";
+      setLoading(ideasBtn, true, "Brainstorm");
+      ideasOutput.textContent = "";
+      ideasOutput.classList.remove("empty-state");
       ideasCost.textContent = "";
       starCurrentIdeaStatus.textContent = "";
       lastIdeaId = null;
@@ -316,11 +370,13 @@
         const data = await res.json();
         if (data.error) {
           ideasOutput.textContent = "Error: " + data.error + "\n" + (data.details || "");
+          showToast("Brainstorming failed", "error");
           return;
         }
 
         ideasOutput.textContent = data.brainstorming || "(no brainstorming text)";
         lastIdeaId = data.ideaId || null;
+        showToast("Brainstorming complete!", "success");
 
         if (data.estimatedCost) {
           const formatted = data.estimatedCost.toFixed(4);
@@ -331,12 +387,17 @@
       } catch (err) {
         console.error(err);
         ideasOutput.textContent = "Error running brainstorming.";
+        showToast("Network error", "error");
+      } finally {
+        setLoading(ideasBtn, false, "Brainstorm");
       }
-    });
+    }
+
+    ideasBtn.addEventListener("click", handleBrainstorm);
 
     starCurrentIdeaBtn.addEventListener("click", async () => {
       if (!lastIdeaId) {
-        alert("No idea to star yet. Run a brainstorm first.");
+        showToast("No idea to star yet. Run a brainstorm first.", "info");
         return;
       }
       try {
@@ -347,33 +408,35 @@
         });
         const data = await res.json();
         if (data.error) {
-          alert("Could not star idea: " + data.error);
+          showToast("Could not star idea: " + data.error, "error");
           return;
         }
         starCurrentIdeaStatus.textContent = "This idea is starred.";
+        showToast("Idea starred!", "success");
         loadSavedIdeas();
       } catch (err) {
         console.error(err);
-        alert("Error starring idea");
+        showToast("Error starring idea", "error");
       }
     });
 
-    // Plan
-    planBtn.addEventListener("click", async () => {
+    async function handlePlan() {
       const repoFullName = projectSelect.value;
       const task = taskInput.value.trim();
       const mode = modeSelect.value === "deep" ? "deep" : "standard";
 
       if (!repoFullName) {
-        alert("Select a project first.");
+        showToast("Select a project first", "error");
         return;
       }
       if (!task) {
-        alert("Enter a task / feature request.");
+        showToast("Enter a task / feature request", "error");
         return;
       }
 
-      planSummary.textContent = "Thinking...";
+      setLoading(planBtn, true, "Plan change");
+      planSummary.textContent = "";
+      planSummary.classList.remove("empty-state");
       planCost.textContent = "";
       filesContainer.style.display = "none";
       filesList.innerHTML = "";
@@ -389,11 +452,13 @@
         const data = await res.json();
         if (data.error) {
           planSummary.textContent = "Error: " + data.error + "\n" + (data.details || "");
+          showToast("Planning failed", "error");
           return;
         }
 
         const { plan, estimatedCost, costWarning, modelUsed, taskId } = data;
         lastTaskId = taskId || null;
+        showToast("Plan generated!", "success");
 
         if (estimatedCost) {
           const formatted = estimatedCost.toFixed(4);
@@ -438,6 +503,7 @@
 
             const useBtn = document.createElement("button");
             useBtn.textContent = "Use this file";
+            useBtn.title = "Populate the edit form with this file";
             useBtn.addEventListener("click", () => {
               filePathInput.value = file.path;
               subtaskInput.value = file.subtaskPrompt || file.changeSummary || "";
@@ -447,11 +513,9 @@
             });
 
             actions.appendChild(useBtn);
-
             item.appendChild(path);
             item.appendChild(reason);
             item.appendChild(actions);
-
             filesList.appendChild(item);
           });
         } else {
@@ -462,12 +526,17 @@
       } catch (err) {
         console.error(err);
         planSummary.textContent = "Error generating plan.";
+        showToast("Network error", "error");
+      } finally {
+        setLoading(planBtn, false, "Plan change");
       }
-    });
+    }
+
+    planBtn.addEventListener("click", handlePlan);
 
     starCurrentTaskBtn.addEventListener("click", async () => {
       if (!lastTaskId) {
-        alert("No plan to star yet. Run a plan first.");
+        showToast("No plan to star yet. Run a plan first.", "info");
         return;
       }
       try {
@@ -478,38 +547,39 @@
         });
         const data = await res.json();
         if (data.error) {
-          alert("Could not star plan: " + data.error);
+          showToast("Could not star plan: " + data.error, "error");
           return;
         }
         starCurrentTaskStatus.textContent = "This plan is starred.";
+        showToast("Plan starred!", "success");
         loadSavedTasks();
       } catch (err) {
         console.error(err);
-        alert("Error starring plan");
+        showToast("Error starring plan", "error");
       }
     });
 
-    // Edit
-    editBtn.addEventListener("click", async () => {
+    async function handleEdit() {
       const repoFullName = projectSelect.value;
       const filePath = filePathInput.value.trim();
       const subtaskPrompt = subtaskInput.value.trim();
       const mode = modeSelect.value === "deep" ? "deep" : "standard";
 
       if (!repoFullName) {
-        alert("Select a project first.");
+        showToast("Select a project first", "error");
         return;
       }
       if (!filePath) {
-        alert("Enter or select a file path.");
+        showToast("Enter or select a file path", "error");
         return;
       }
       if (!subtaskPrompt) {
-        alert("Enter a focused subtask for this file (or click Use this file from the plan).");
+        showToast("Enter a focused subtask for this file", "error");
         return;
       }
 
-      updatedContent.value = "// Updating...";
+      setLoading(editBtn, true, "Update file");
+      updatedContent.value = "";
       editCost.textContent = "";
 
       try {
@@ -521,9 +591,11 @@
         const data = await res.json();
         if (data.error) {
           updatedContent.value = "// Error: " + data.error + "\n" + (data.details || "");
+          showToast("Update failed", "error");
           return;
         }
         updatedContent.value = data.updatedContent || "";
+        showToast("File updated!", "success");
 
         if (data.estimatedCost) {
           const formatted = data.estimatedCost.toFixed(4);
@@ -532,21 +604,27 @@
       } catch (err) {
         console.error(err);
         updatedContent.value = "// Error updating file.";
+        showToast("Network error", "error");
+      } finally {
+        setLoading(editBtn, false, "Update file");
       }
-    });
+    }
 
-    // Debug
-    debugBtn.addEventListener("click", async () => {
+    editBtn.addEventListener("click", handleEdit);
+
+    async function handleDebug() {
       const repoFullName = projectSelect.value;
       const errorText = errorTextInput.value.trim();
       const mode = modeSelect.value === "deep" ? "deep" : "standard";
 
       if (!errorText) {
-        alert("Paste some error output first.");
+        showToast("Paste some error output first", "error");
         return;
       }
 
-      debugOutput.textContent = "Thinking about the error...";
+      setLoading(debugBtn, true, "Explain and suggest fixes");
+      debugOutput.textContent = "";
+      debugOutput.classList.remove("empty-state");
       debugCost.textContent = "";
 
       try {
@@ -558,9 +636,11 @@
         const data = await res.json();
         if (data.error) {
           debugOutput.textContent = "Error: " + data.error + "\n" + (data.details || "");
+          showToast("Debug failed", "error");
           return;
         }
         debugOutput.textContent = data.explanation || "(no explanation text)";
+        showToast("Debug complete!", "success");
 
         if (data.estimatedCost) {
           const formatted = data.estimatedCost.toFixed(4);
@@ -569,10 +649,14 @@
       } catch (err) {
         console.error(err);
         debugOutput.textContent = "Error running debug.";
+        showToast("Network error", "error");
+      } finally {
+        setLoading(debugBtn, false, "Explain and suggest fixes");
       }
-    });
+    }
 
-    // Saved ideas
+    debugBtn.addEventListener("click", handleDebug);
+
     async function loadSavedIdeas() {
       const repoFullName = projectSelect.value || "";
       const starredOnly = ideasStarredOnlyCheckbox.checked ? "1" : "0";
@@ -589,7 +673,7 @@
         const res = await fetch(url);
         const data = await res.json();
         if (!Array.isArray(data) || data.length === 0) {
-          ideasList.innerHTML = "<div class='small'>No saved ideas yet.</div>";
+          ideasList.innerHTML = "<div class='empty-state'><span class='empty-state-icon'>💭</span><br>No saved ideas yet. Run a brainstorm to get started!</div>";
           ideasListHint.textContent = "";
           return;
         }
@@ -603,47 +687,30 @@
           top.className = "file-path";
           const date = new Date(item.createdAt);
           const dateStr = isNaN(date.getTime()) ? item.createdAt : date.toLocaleString();
-          top.textContent = `[${dateStr}] ${item.repoFullName || "No repo"} (${item.mode})`;
+          top.textContent = (item.starred ? "⭐ " : "") + dateStr;
 
-          const snippet = document.createElement("div");
-          snippet.className = "file-reason";
-          snippet.textContent = item.ideaSnippet;
+          const text = document.createElement("div");
+          text.className = "file-reason";
+          text.textContent = item.ideaText ? item.ideaText.slice(0, 120) + (item.ideaText.length > 120 ? "..." : "") : "";
 
           const actions = document.createElement("div");
           actions.className = "file-actions";
 
-          const openBtn = document.createElement("button");
-          openBtn.textContent = "Open idea";
-          openBtn.addEventListener("click", async () => {
-            try {
-              const res = await fetch("/api/ideas/" + encodeURIComponent(item.id));
-              const full = await res.json();
-              if (full.error) {
-                alert("Could not load idea: " + full.error);
-                return;
-              }
-              ideaTextInput.value = full.ideaText || "";
-              ideasOutput.textContent = full.brainstorming || "";
-              lastIdeaId = full.id;
-              starCurrentIdeaStatus.textContent = full.starred ? "This idea is starred." : "";
-              if (full.repoFullName) {
-                for (const opt of projectSelect.options) {
-                  if (opt.value === full.repoFullName) {
-                    projectSelect.value = full.repoFullName;
-                    break;
-                  }
-                }
-              }
-              activateTab("work");
-              window.scrollTo({ top: 0, behavior: "smooth" });
-            } catch (err) {
-              console.error(err);
-              alert("Error loading idea");
-            }
+          const viewBtn = document.createElement("button");
+          viewBtn.textContent = "View";
+          viewBtn.title = "View full brainstorm output";
+          viewBtn.addEventListener("click", () => {
+            ideaTextInput.value = item.ideaText || "";
+            ideasOutput.textContent = item.brainstorming || "(no output)";
+            ideasOutput.classList.remove("empty-state");
+            lastIdeaId = item.id;
+            activateTab("work");
+            window.scrollTo({ top: ideasOutput.offsetTop - 40, behavior: "smooth" });
           });
 
           const starBtn = document.createElement("button");
           starBtn.textContent = item.starred ? "Unstar" : "Star";
+          starBtn.title = item.starred ? "Remove star" : "Star this idea";
           starBtn.addEventListener("click", async () => {
             try {
               const res = await fetch("/api/ideas/" + encodeURIComponent(item.id) + "/star", {
@@ -651,39 +718,35 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ starred: !item.starred })
               });
-              const out = await res.json();
-              if (out.error) {
-                alert("Could not update star: " + out.error);
+              const d = await res.json();
+              if (d.error) {
+                showToast("Could not update star: " + d.error, "error");
                 return;
               }
+              showToast(item.starred ? "Star removed" : "Idea starred!", "success");
               loadSavedIdeas();
             } catch (err) {
               console.error(err);
-              alert("Error updating star");
+              showToast("Error updating star", "error");
             }
           });
 
-          actions.appendChild(openBtn);
+          actions.appendChild(viewBtn);
           actions.appendChild(starBtn);
 
           div.appendChild(top);
-          div.appendChild(snippet);
+          div.appendChild(text);
           div.appendChild(actions);
-
           ideasList.appendChild(div);
         });
 
-        ideasListHint.textContent = `${data.length} ideas loaded`;
+        ideasListHint.textContent = data.length + " idea(s)";
       } catch (err) {
         console.error(err);
-        ideasList.innerHTML = "<div class='small'>Error loading ideas</div>";
+        ideasList.innerHTML = "<div class='small'>Error loading ideas.</div>";
       }
     }
 
-    refreshIdeasBtn.addEventListener("click", loadSavedIdeas);
-    ideasStarredOnlyCheckbox.addEventListener("change", loadSavedIdeas);
-
-    // Saved tasks
     async function loadSavedTasks() {
       const repoFullName = projectSelect.value || "";
       const starredOnly = tasksStarredOnlyCheckbox.checked ? "1" : "0";
@@ -700,7 +763,7 @@
         const res = await fetch(url);
         const data = await res.json();
         if (!Array.isArray(data) || data.length === 0) {
-          tasksList.innerHTML = "<div class='small'>No saved plans yet.</div>";
+          tasksList.innerHTML = "<div class='empty-state'><span class='empty-state-icon'>📋</span><br>No saved plans yet. Create a plan to get started!</div>";
           tasksListHint.textContent = "";
           return;
         }
@@ -714,103 +777,30 @@
           top.className = "file-path";
           const date = new Date(item.createdAt);
           const dateStr = isNaN(date.getTime()) ? item.createdAt : date.toLocaleString();
-          top.textContent = `[${dateStr}] ${item.repoFullName} (${item.mode})`;
+          top.textContent = (item.starred ? "⭐ " : "") + dateStr;
 
-          const snippet = document.createElement("div");
-          snippet.className = "file-reason";
-          snippet.textContent = item.taskSnippet;
+          const text = document.createElement("div");
+          text.className = "file-reason";
+          text.textContent = item.task ? item.task.slice(0, 120) + (item.task.length > 120 ? "..." : "") : "";
 
           const actions = document.createElement("div");
           actions.className = "file-actions";
 
-          const openBtn = document.createElement("button");
-          openBtn.textContent = "Open plan";
-          openBtn.addEventListener("click", async () => {
-            try {
-              const res = await fetch("/api/tasks/" + encodeURIComponent(item.id));
-              const full = await res.json();
-              if (full.error) {
-                alert("Could not load plan: " + full.error);
-                return;
-              }
-
-              const plan = full.plan || {};
-              taskInput.value = full.taskText || "";
-              lastTaskId = full.id;
-              starCurrentTaskStatus.textContent = full.starred ? "This plan is starred." : "";
-
-              let summaryText = "";
-              if (plan.planText) {
-                summaryText = plan.planText;
-              } else {
-                summaryText += `Stack: ${plan.stack || "unknown"}\n`;
-                summaryText += `Feasible: ${plan.feasible}\n`;
-                if (plan.comment) summaryText += `Comment: ${plan.comment}\n\n`;
-                if (Array.isArray(plan.steps) && plan.steps.length) {
-                  summaryText += "Steps:\n";
-                  plan.steps.forEach((s, idx) => {
-                    summaryText += `${idx + 1}. ${s}\n`;
-                  });
-                }
-              }
-              planSummary.textContent = summaryText || "(no plan text)";
-
-              filesContainer.style.display = "none";
-              filesList.innerHTML = "";
-              if (Array.isArray(plan.files) && plan.files.length) {
-                filesContainer.style.display = "block";
-                plan.files.forEach(file => {
-                  const itemDiv = document.createElement("div");
-                  itemDiv.className = "file-item";
-
-                  const pathDiv = document.createElement("div");
-                  pathDiv.className = "file-path";
-                  pathDiv.textContent = file.path;
-
-                  const reasonDiv = document.createElement("div");
-                  reasonDiv.className = "file-reason";
-                  reasonDiv.textContent = file.reason || file.changeSummary || "";
-
-                  const actionsDiv = document.createElement("div");
-                  actionsDiv.className = "file-actions";
-
-                  const useBtn = document.createElement("button");
-                  useBtn.textContent = "Use this file";
-                  useBtn.addEventListener("click", () => {
-                    filePathInput.value = file.path;
-                    subtaskInput.value = file.subtaskPrompt || file.changeSummary || "";
-                    updatedContent.value = "";
-                    activateTab("work");
-                    window.scrollTo({ top: filePathInput.offsetTop - 40, behavior: "smooth" });
-                  });
-
-                  actionsDiv.appendChild(useBtn);
-                  itemDiv.appendChild(pathDiv);
-                  itemDiv.appendChild(reasonDiv);
-                  itemDiv.appendChild(actionsDiv);
-
-                  filesList.appendChild(itemDiv);
-                });
-              }
-
-              if (full.repoFullName) {
-                for (const opt of projectSelect.options) {
-                  if (opt.value === full.repoFullName) {
-                    projectSelect.value = full.repoFullName;
-                    break;
-                  }
-                }
-              }
-              activateTab("work");
-              window.scrollTo({ top: planSummary.offsetTop - 40, behavior: "smooth" });
-            } catch (err) {
-              console.error(err);
-              alert("Error loading plan");
-            }
+          const viewBtn = document.createElement("button");
+          viewBtn.textContent = "View";
+          viewBtn.title = "View full plan";
+          viewBtn.addEventListener("click", () => {
+            taskInput.value = item.task || "";
+            planSummary.textContent = item.planText || JSON.stringify(item.plan, null, 2) || "(no plan)";
+            planSummary.classList.remove("empty-state");
+            lastTaskId = item.id;
+            activateTab("work");
+            window.scrollTo({ top: planSummary.offsetTop - 40, behavior: "smooth" });
           });
 
           const starBtn = document.createElement("button");
           starBtn.textContent = item.starred ? "Unstar" : "Star";
+          starBtn.title = item.starred ? "Remove star" : "Star this plan";
           starBtn.addEventListener("click", async () => {
             try {
               const res = await fetch("/api/tasks/" + encodeURIComponent(item.id) + "/star", {
@@ -818,45 +808,60 @@
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ starred: !item.starred })
               });
-              const out = await res.json();
-              if (out.error) {
-                alert("Could not update star: " + out.error);
+              const d = await res.json();
+              if (d.error) {
+                showToast("Could not update star: " + d.error, "error");
                 return;
               }
+              showToast(item.starred ? "Star removed" : "Plan starred!", "success");
               loadSavedTasks();
             } catch (err) {
               console.error(err);
-              alert("Error updating star");
+              showToast("Error updating star", "error");
             }
           });
 
-          actions.appendChild(openBtn);
+          actions.appendChild(viewBtn);
           actions.appendChild(starBtn);
 
           div.appendChild(top);
-          div.appendChild(snippet);
+          div.appendChild(text);
           div.appendChild(actions);
-
           tasksList.appendChild(div);
         });
 
-        tasksListHint.textContent = `${data.length} plans loaded`;
+        tasksListHint.textContent = data.length + " plan(s)";
       } catch (err) {
         console.error(err);
-        tasksList.innerHTML = "<div class='small'>Error loading plans</div>";
+        tasksList.innerHTML = "<div class='small'>Error loading plans.</div>";
       }
     }
 
-    refreshTasksBtn.addEventListener("click", loadSavedTasks);
-    tasksStarredOnlyCheckbox.addEventListener("change", loadSavedTasks);
+    refreshIdeasBtn.addEventListener("click", () => { loadSavedIdeas(); });
+    ideasStarredOnlyCheckbox.addEventListener("change", () => { loadSavedIdeas(); });
+    refreshTasksBtn.addEventListener("click", () => { loadSavedTasks(); });
+    tasksStarredOnlyCheckbox.addEventListener("change", () => { loadSavedTasks(); });
 
-    // Initial load
-    (async () => {
-      await loadProjects();
-      loadSavedIdeas();
-      loadSavedTasks();
-    })();
+    document.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && e.key === "Enter") {
+        const active = document.activeElement;
+        if (active === ideaTextInput) {
+          e.preventDefault();
+          handleBrainstorm();
+        } else if (active === taskInput) {
+          e.preventDefault();
+          handlePlan();
+        } else if (active === subtaskInput || active === filePathInput) {
+          e.preventDefault();
+          handleEdit();
+        } else if (active === errorTextInput) {
+          e.preventDefault();
+          handleDebug();
+        }
+      }
+    });
+
+    loadProjects();
   </script>
 </body>
 </html>
-
