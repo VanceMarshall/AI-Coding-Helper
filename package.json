@@ -1,13 +1,16 @@
 {
-  "name": "nodejs-template",
+  "name": "ai-code-helper",
   "version": "1.0.0",
-  "description": "A blank Node.js template",
-  "main": "index.js",
+  "type": "module",
+  "main": "server.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node index.js"
+    "start": "node server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.0",
+    "node-fetch": "^3.3.2",
+    "openai": "^4.0.0"
+  }
 }
+
