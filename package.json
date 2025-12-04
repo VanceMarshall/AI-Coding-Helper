@@ -1,0 +1,13 @@
+{
+  "name": "nodejs-template",
+  "version": "1.0.0",
+  "description": "A blank Node.js template",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
