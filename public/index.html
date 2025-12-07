@@ -338,7 +338,7 @@
       const pinnedOnly = pinnedOnlyCheckbox.checked ? "1" : "0";
       projectSelect.innerHTML = "<option>Loading...</option>";
       try {
-        const res = await fetch(\`/api/projects?pinned=\${pinnedOnly}\`);
+        const res = await fetch(`/api/projects?pinned=${pinnedOnly}`);
         const data = await res.json();
         projectSelect.innerHTML = "";
         if (!Array.isArray(data) || data.length === 0) {
@@ -418,7 +418,7 @@
 
         if (data.estimatedCost) {
           const formatted = data.estimatedCost.toFixed(4);
-          ideasCost.innerHTML = `<span class="\${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
+          ideasCost.innerHTML = `<span class="${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
         }
 
         loadSavedIdeas();
@@ -473,7 +473,7 @@
 
         if (data.estimatedCost) {
           const formatted = data.estimatedCost.toFixed(4);
-          ideasCost.innerHTML = `<span class="\${data.costWarning ? "cost-warning" : "cost-normal"}">Last call estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
+          ideasCost.innerHTML = `<span class="${data.costWarning ? "cost-warning" : "cost-normal"}">Last call estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
         }
 
         loadSavedIdeas();
@@ -555,7 +555,7 @@
 
         if (estimatedCost) {
           const formatted = estimatedCost.toFixed(4);
-          planCost.innerHTML = `<span class="\${costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${modelUsed}${costWarning ? " (higher than usual)" : ""}</span>`;
+          planCost.innerHTML = `<span class="${costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${modelUsed}${costWarning ? " (higher than usual)" : ""}</span>`;
         }
 
         let summaryText = "";
@@ -682,7 +682,7 @@
 
         if (data.estimatedCost) {
           const formatted = data.estimatedCost.toFixed(4);
-          editCost.innerHTML = `<span class="\${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
+          editCost.innerHTML = `<span class="${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
         }
       } catch (err) {
         console.error(err);
@@ -727,7 +727,7 @@
 
         if (data.estimatedCost) {
           const formatted = data.estimatedCost.toFixed(4);
-          debugCost.innerHTML = `<span class="\${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
+          debugCost.innerHTML = `<span class="${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
         }
       } catch (err) {
         console.error(err);
