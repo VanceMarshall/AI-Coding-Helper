@@ -1,0 +1,28 @@
+[
+  {
+    "id": "miv3f7ud-h46ohisa",
+    "repoFullName": "VanceMarshall/ReadySetVO",
+    "task": "The Metadata function is still only producing the Long Form title and only giving one option.  It says it is scoring it but shows (/10) \n\nIt should also produce some Metadata for Shorts on the topic.  Can you review the prompt that is sent to OpenAI with this function?",
+    "plan": {
+      "planText": "Investigate the function responsible for generating metadata, specifically its prompt construction to OpenAI. Identify where the prompt for the Metadata function is created and modify it to produce not only the Long Form title with scoring, but also metadata options for Shorts on the same topic. Refactor or enhance the prompt to ask for multiple options and include scores properly. Update the part of the code that handles the OpenAI prompt to ensure it yields the expected output.",
+      "files": [
+        {
+          "path": "server.py",
+          "reason": "Likely contains the backend function that constructs and sends the metadata prompt to OpenAI, since this is a Python app and server.py usually handles server logic.",
+          "changeSummary": "Update the OpenAI prompt in the metadata function to request additional Shorts metadata and correctly handle scoring for multiple options.",
+          "subtaskPrompt": "Find the function in server.py that generates metadata by sending a prompt to OpenAI. Modify the OpenAI prompt to produce multiple metadata options including Shorts on the topic, and ensure the scoring (/10) is included for each. Adjust parsing as necessary to handle multiple outputs."
+        },
+        {
+          "path": "client/src/pages/ProjectDetail.jsx",
+          "reason": "The metadata output is probably displayed in this detailed project page, so we may need to adapt UI code to handle multiple metadata options if changed.",
+          "changeSummary": "Adjust the UI rendering logic to display multiple metadata options for both Long Form and Shorts, including their scores.",
+          "subtaskPrompt": "Edit the ProjectDetail.jsx file to update the display logic of metadata results for a project. Make sure it can render multiple metadata options with scores, including metadata related to Shorts."
+        }
+      ]
+    },
+    "planText": "Investigate the function responsible for generating metadata, specifically its prompt construction to OpenAI. Identify where the prompt for the Metadata function is created and modify it to produce not only the Long Form title with scoring, but also metadata options for Shorts on the same topic. Refactor or enhance the prompt to ask for multiple options and include scores properly. Update the part of the code that handles the OpenAI prompt to ensure it yields the expected output.",
+    "starred": false,
+    "createdAt": "2025-12-07T02:18:12.469Z",
+    "updatedAt": "2025-12-07T02:18:12.469Z"
+  }
+]

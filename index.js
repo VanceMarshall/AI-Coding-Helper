@@ -130,6 +130,13 @@ function parseRepoFullName(full) {
   return { owner, repo };
 }
 
+function encodeGitHubPath(filePath) {
+  return (filePath || "")
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/");
+}
+
 async function fetchGitHubJson(url, token) {
   const headers = {
     Accept: "application/vnd.github+json",
@@ -198,9 +205,8 @@ async function getFileFromGitHub(repoFullName, filePath) {
     throw new Error("GITHUB_TOKEN is not set");
   }
   const { owner, repo } = parseRepoFullName(repoFullName);
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(
-    filePath
-  )}`;
+  const encodedPath = encodeGitHubPath(filePath);
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodedPath}`;
   const json = await fetchGitHubJson(url, token);
   if (!json.content) {
     throw new Error("GitHub content response missing content field");
@@ -270,9 +276,21 @@ function buildConversationTranscript(messages) {
     .join("\n\n");
 }
 
-// ---------- API: ideas (brainstorm + conversation) ----------
+function buildConversationForModel(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return "";
+  }
+  return messages
+    .map((m) =>
+      (m.role === "user" ? "User: " : "Assistant: ") +
+      (m.text || "")
+    )
+    .join("\n\n");
+}
 
-// Create a new brainstorm
+// ---------- API: ideas (conversation / brainstorming) ----------
+
+// Create a new conversation entry
 app.post("/api/ideas", async (req, res) => {
   const { repoFullName = "", ideaText, mode = "standard" } =
     req.body || {};
@@ -287,7 +305,8 @@ app.post("/api/ideas", async (req, res) => {
     const instructions =
       "You are an expert full stack engineer and product partner. " +
       "Help brainstorm and refine software ideas for the user. " +
-      "Be concrete, realistic, and helpful. Suggest next steps.";
+      "Be concrete, realistic, and helpful. Suggest next steps. " +
+      "You may be asked about new features or debugging issues.";
 
     let context = "";
     if (repoFullName) {
@@ -297,7 +316,8 @@ app.post("/api/ideas", async (req, res) => {
       "User idea or question:\n" +
       ideaText +
       "\n\n" +
-      "Provide a helpful brainstorm with bullet points and practical options.";
+      "Provide a helpful answer with bullet points and practical options. " +
+      "If relevant, suggest how to implement this in the existing codebase.";
 
     const {
       text,
@@ -324,7 +344,7 @@ app.post("/api/ideas", async (req, res) => {
       repoFullName: repoFullName || null,
       mode,
       ideaText,
-      brainstorming: text, // first reply only
+      brainstorming: text, // most recent answer
       messages,
       starred: false,
       createdAt: now,
@@ -348,7 +368,7 @@ app.post("/api/ideas", async (req, res) => {
   } catch (err) {
     console.error("Error in /api/ideas", err);
     res.status(500).json({
-      error: "Failed to run brainstorm",
+      error: "Failed to run conversation",
       details: err.message,
     });
   }
@@ -383,17 +403,12 @@ app.post("/api/ideas/:id/reply", async (req, res) => {
 
     messages.push({ role: "user", text: followupText });
 
-    const convoForModel = messages
-      .map((m) =>
-        (m.role === "user" ? "User: " : "Assistant: ") +
-        (m.text || "")
-      )
-      .join("\n\n");
+    const convoForModel = buildConversationForModel(messages);
 
     const instructions =
-      "You are continuing a technical brainstorming conversation with a developer. " +
+      "You are continuing a technical conversation with a developer. " +
       "Respect previous context and avoid repeating yourself. " +
-      "Give specific suggestions and next steps.";
+      "Give specific suggestions, code level guidance, and next steps.";
 
     const {
       text,
@@ -484,6 +499,7 @@ app.post("/api/ideas/:id/star", async (req, res) => {
 
 // ---------- API: plan / tasks ----------
 
+// Existing /api/plan (direct task based) kept for flexibility, but main flow uses /api/plan/from-idea
 app.post("/api/plan", async (req, res) => {
   const { repoFullName, task, mode = "standard" } = req.body || {};
 
@@ -578,6 +594,154 @@ app.post("/api/plan", async (req, res) => {
     console.error("Error in /api/plan", err);
     res.status(500).json({
       error: "Failed to generate plan",
+      details: err.message,
+    });
+  }
+});
+
+// New: generate plan from an idea conversation thread
+app.post("/api/plan/from-idea", async (req, res) => {
+  const {
+    ideaId,
+    repoFullName: overrideRepoFullName,
+    mode = "standard",
+  } = req.body || {};
+
+  if (!ideaId) {
+    return res
+      .status(400)
+      .json({ error: "ideaId is required" });
+  }
+
+  try {
+    const ideas = await readJson(ideasPath, []);
+    const idea = ideas.find((i) => i.id === ideaId);
+    if (!idea) {
+      return res.status(404).json({ error: "Idea not found" });
+    }
+
+    const repoFullName =
+      overrideRepoFullName ||
+      idea.repoFullName ||
+      "";
+
+    let filePaths = [];
+    let stack = "Unknown stack";
+
+    if (repoFullName) {
+      try {
+        filePaths = await listRepoFiles(repoFullName);
+        stack = detectStack(filePaths);
+      } catch (err) {
+        console.warn(
+          "Could not list repo files in /api/plan/from-idea",
+          err.message
+        );
+      }
+    }
+
+    const messages =
+      Array.isArray(idea.messages) && idea.messages.length
+        ? idea.messages
+        : [
+            { role: "user", text: idea.ideaText || "" },
+            { role: "assistant", text: idea.brainstorming || "" },
+          ];
+
+    const convoForModel = buildConversationForModel(messages);
+    const firstUserMessage = messages.find(
+      (m) =>
+        m.role === "user" &&
+        (m.text || "").trim().length > 0
+    );
+    const taskDescription = firstUserMessage
+      ? firstUserMessage.text.slice(0, 200)
+      : "Plan from conversation";
+
+    const planPrompt =
+      "You are a senior full stack engineer planning concrete changes to a codebase.\n\n" +
+      (repoFullName
+        ? `Repository: ${repoFullName}\n`
+        : "") +
+      `Inferred stack: ${stack}\n\n` +
+      (filePaths.length
+        ? "Known files in the repo:\n" +
+          filePaths
+            .slice(0, 200)
+            .map((p) => "- " + p)
+            .join("\n") +
+          "\n\n"
+        : "") +
+      "Here is the recent conversation between you (Assistant) and the developer:\n\n" +
+      convoForModel +
+      "\n\nBased on this conversation, produce a concrete implementation plan for the requested changes in this repository.\n\n" +
+      "Respond with STRICT JSON only and no extra text, in this shape:\n" +
+      `{
+  "planText": "High level explanation and numbered steps in plain English",
+  "files": [
+    {
+      "path": "relative/path/file.ext",
+      "reason": "why this file should change",
+      "changeSummary": "short description of the change for this file",
+      "subtaskPrompt": "focused instruction for an AI code editor to update ONLY this file"
+    }
+  ]
+}\n` +
+      "Use at most 8 files. Use real paths from the list when possible. " +
+      "If you are unsure, choose your best guess and explain in the reason field.";
+
+    const {
+      text,
+      modelUsed,
+      estimatedCost,
+      costWarning,
+    } = await callModelWithInstructions(mode, "", planPrompt, {
+      maxOutputTokens: 2200,
+    });
+
+    let planObj;
+    try {
+      planObj = JSON.parse(text);
+    } catch (err) {
+      console.warn(
+        "Plan JSON parse failed in /api/plan/from-idea, returning raw text"
+      );
+      planObj = {
+        planText: text,
+        files: [],
+      };
+    }
+
+    const now = new Date().toISOString();
+    const tasks = await readJson(tasksPath, []);
+    const taskId = createId();
+
+    const taskItem = {
+      id: taskId,
+      repoFullName: repoFullName || null,
+      task: taskDescription,
+      plan: planObj,
+      planText: planObj.planText || "",
+      sourceIdeaId: ideaId,
+      starred: false,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    tasks.push(taskItem);
+    await writeJson(tasksPath, tasks);
+
+    res.json({
+      taskId,
+      plan: planObj,
+      estimatedCost,
+      costWarning,
+      modelUsed,
+    });
+  } catch (err) {
+    console.error("Error in /api/plan/from-idea", err);
+    res.status(500).json({
+      error: "Failed to generate plan from conversation",
       details: err.message,
     });
   }
@@ -770,6 +934,125 @@ app.post("/api/debug", async (req, res) => {
     console.error("Error in /api/debug", err);
     res.status(500).json({
       error: "Failed to debug",
+      details: err.message,
+    });
+  }
+});
+
+// ---------- API: commit file to GitHub ----------
+
+app.post("/api/commit-file", async (req, res) => {
+  const {
+    repoFullName,
+    filePath,
+    updatedContent,
+    commitMessage,
+  } = req.body || {};
+
+  if (!repoFullName) {
+    return res
+      .status(400)
+      .json({ error: "repoFullName is required" });
+  }
+  if (!filePath) {
+    return res
+      .status(400)
+      .json({ error: "filePath is required" });
+  }
+  if (!updatedContent || !updatedContent.trim()) {
+    return res
+      .status(400)
+      .json({ error: "updatedContent is required" });
+  }
+
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    return res.status(500).json({
+      error:
+        "GITHUB_TOKEN is not set. Add it in Replit secrets to enable committing.",
+    });
+  }
+
+  try {
+    const { owner, repo } = parseRepoFullName(repoFullName);
+    const encodedPath = encodeGitHubPath(filePath);
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodedPath}`;
+
+    const headers = {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+
+    // Try to get existing file to obtain sha
+    let sha = undefined;
+    try {
+      const getRes = await fetch(url, {
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (getRes.status === 200) {
+        const json = await getRes.json();
+        if (json && json.sha) {
+          sha = json.sha;
+        }
+      } else if (getRes.status !== 404) {
+        const text = await getRes.text();
+        throw new Error(
+          `GitHub GET error ${getRes.status}: ${text}`
+        );
+      }
+    } catch (err) {
+      console.warn(
+        "Error reading existing file before commit",
+        err.message
+      );
+    }
+
+    const contentBase64 = Buffer.from(
+      updatedContent,
+      "utf8"
+    ).toString("base64");
+
+    const message =
+      commitMessage ||
+      `AI update to ${filePath}`.slice(0, 100);
+
+    const body = {
+      message,
+      content: contentBase64,
+    };
+    if (sha) {
+      body.sha = sha;
+    }
+
+    const putRes = await fetch(url, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    if (!putRes.ok) {
+      const text = await putRes.text();
+      throw new Error(
+        `GitHub PUT error ${putRes.status}: ${text}`
+      );
+    }
+
+    const result = await putRes.json();
+
+    res.json({
+      ok: true,
+      path: result.content?.path || filePath,
+      commitSha: result.commit?.sha || null,
+      branch: result.content?.branch || null,
+    });
+  } catch (err) {
+    console.error("Error in /api/commit-file", err);
+    res.status(500).json({
+      error: "Failed to commit file",
       details: err.message,
     });
   }
