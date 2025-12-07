@@ -82,10 +82,7 @@
   <div class="row">
     <div>
       <label for="projectSelect" title="Select the GitHub repository to work with">Project (GitHub repo)</label>
-      <select id="projectSelect" title="Choose a project from your repositories"></select>
-      <div class="small">
-        <label><input type="checkbox" id="pinnedOnly" checked /> Show pinned only</label>
-      </div>
+      <select id="projectSelect" title="Choose a project from your repositories, or None for new ideas"></select>
     </div>
     <button id="refreshProjectsBtn" title="Reload your project list">Refresh</button>
   </div>
@@ -253,7 +250,6 @@
     }
 
     const projectSelect = document.getElementById("projectSelect");
-    const pinnedOnlyCheckbox = document.getElementById("pinnedOnly");
     const refreshProjectsBtn = document.getElementById("refreshProjectsBtn");
     const modeSelect = document.getElementById("modeSelect");
     const modeHint = document.getElementById("modeHint");
@@ -335,28 +331,25 @@
     tabSaved.addEventListener("click", () => activateTab("saved"));
 
     async function loadProjects() {
-      const pinnedOnly = pinnedOnlyCheckbox.checked ? "1" : "0";
       projectSelect.innerHTML = "<option>Loading...</option>";
       try {
-        const res = await fetch(`/api/projects?pinned=${pinnedOnly}`);
+        const res = await fetch(`/api/projects?pinned=0`);
         const data = await res.json();
         projectSelect.innerHTML = "";
-        if (!Array.isArray(data) || data.length === 0) {
-          const opt = document.createElement("option");
-          opt.value = "";
-          opt.textContent = pinnedOnly === "1"
-            ? "No pinned projects found (update pinnedProjects.json)"
-            : "No projects found";
-          projectSelect.appendChild(opt);
-          return;
+        
+        const noneOpt = document.createElement("option");
+        noneOpt.value = "";
+        noneOpt.textContent = "None (new idea)";
+        projectSelect.appendChild(noneOpt);
+        
+        if (Array.isArray(data) && data.length > 0) {
+          for (const repo of data) {
+            const opt = document.createElement("option");
+            opt.value = repo.fullName;
+            opt.textContent = repo.fullName;
+            projectSelect.appendChild(opt);
+          }
         }
-        for (const repo of data) {
-          const opt = document.createElement("option");
-          opt.value = repo.fullName;
-          opt.textContent = repo.fullName + (repo.pinned ? " ★" : "");
-          projectSelect.appendChild(opt);
-        }
-        // Load saved ideas and tasks for the first project
         loadSavedIdeas();
         loadSavedTasks();
       } catch (err) {
@@ -366,7 +359,6 @@
       }
     }
 
-    pinnedOnlyCheckbox.addEventListener("change", () => { loadProjects(); });
     refreshProjectsBtn.addEventListener("click", () => { loadProjects(); });
 
     projectSelect.addEventListener("change", () => {
