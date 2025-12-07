@@ -12,15 +12,15 @@
     textarea { min-height: 120px; font-family: monospace; resize: vertical; }
     .row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 12px; flex-wrap: wrap; }
     .row > * { flex: 1; min-width: 200px; }
-    
+
     button { padding: 8px 16px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #f7f7f7; font-size: 14px; transition: all 0.2s; }
     button:hover { background: #e8e8e8; }
     button:active { transform: scale(0.98); }
     button:disabled { opacity: 0.6; cursor: not-allowed; }
-    
+
     .btn-primary { background: #2563eb; color: white; border-color: #2563eb; font-weight: 600; }
     .btn-primary:hover { background: #1d4ed8; }
-    
+
     pre { background: #f3f3f3; padding: 12px; overflow: auto; white-space: pre-wrap; border-radius: 4px; font-size: 13px; }
     .small { font-size: 12px; color: #555; }
     .file-list { border: 1px solid #ddd; padding: 12px; margin-top: 8px; border-radius: 4px; }
@@ -119,8 +119,15 @@
       <button id="ideasBtn" class="btn-primary" title="Generate ideas based on your input">Brainstorm</button>
       <div id="ideasCost" class="small"></div>
 
-      <h3>Brainstorming output</h3>
+      <h3>Brainstorming output (conversation)</h3>
       <pre id="ideasOutput" class="empty-state"><span class="empty-state-icon">💭</span><br>Enter an idea above and click Brainstorm to get started</pre>
+
+      <label for="ideaFollowup" class="small">Follow up question (keeps the same conversation)</label>
+      <textarea id="ideaFollowup" placeholder="Ask a follow up based on the current idea and answer..." title="Ask a follow up question for this brainstorm"></textarea>
+      <button id="ideasFollowupBtn" title="Ask a follow up question about this idea">Ask follow up</button>
+      <span id="ideasFollowupHint" class="small"></span>
+
+      <br />
       <button id="starCurrentIdeaBtn" class="small" title="Save this idea for later">⭐ Star this idea</button>
       <span id="starCurrentIdeaStatus" class="small"></span>
     </div>
@@ -228,6 +235,23 @@
       }
     }
 
+    function renderConversationFromMessages(messages) {
+      if (!Array.isArray(messages) || messages.length === 0) return "";
+      return messages
+        .map(m => (m.role === "user" ? "You: " : "AI: ") + (m.text || ""))
+        .join("\\n\\n");
+    }
+
+    function renderConversationFromIdea(item) {
+      if (Array.isArray(item.messages) && item.messages.length) {
+        return renderConversationFromMessages(item.messages);
+      }
+      const parts = [];
+      if (item.ideaText) parts.push("You: " + item.ideaText);
+      if (item.brainstorming) parts.push("AI: " + item.brainstorming);
+      return parts.join("\\n\\n");
+    }
+
     const projectSelect = document.getElementById("projectSelect");
     const pinnedOnlyCheckbox = document.getElementById("pinnedOnly");
     const refreshProjectsBtn = document.getElementById("refreshProjectsBtn");
@@ -243,6 +267,9 @@
     const ideasBtn = document.getElementById("ideasBtn");
     const ideasOutput = document.getElementById("ideasOutput");
     const ideasCost = document.getElementById("ideasCost");
+    const ideaFollowupInput = document.getElementById("ideaFollowup");
+    const ideasFollowupBtn = document.getElementById("ideasFollowupBtn");
+    const ideasFollowupHint = document.getElementById("ideasFollowupHint");
     const starCurrentIdeaBtn = document.getElementById("starCurrentIdeaBtn");
     const starCurrentIdeaStatus = document.getElementById("starCurrentIdeaStatus");
     let lastIdeaId = null;
@@ -311,7 +338,7 @@
       const pinnedOnly = pinnedOnlyCheckbox.checked ? "1" : "0";
       projectSelect.innerHTML = "<option>Loading...</option>";
       try {
-        const res = await fetch(`/api/projects?pinned=${pinnedOnly}`);
+        const res = await fetch(\`/api/projects?pinned=\${pinnedOnly}\`);
         const data = await res.json();
         projectSelect.innerHTML = "";
         if (!Array.isArray(data) || data.length === 0) {
@@ -329,6 +356,9 @@
           opt.textContent = repo.fullName + (repo.pinned ? " ★" : "");
           projectSelect.appendChild(opt);
         }
+        // Load saved ideas and tasks for the first project
+        loadSavedIdeas();
+        loadSavedTasks();
       } catch (err) {
         console.error(err);
         projectSelect.innerHTML = "<option>Error loading projects</option>";
@@ -358,6 +388,7 @@
       ideasOutput.textContent = "";
       ideasOutput.classList.remove("empty-state");
       ideasCost.textContent = "";
+      ideasFollowupHint.textContent = "";
       starCurrentIdeaStatus.textContent = "";
       lastIdeaId = null;
 
@@ -369,18 +400,25 @@
         });
         const data = await res.json();
         if (data.error) {
-          ideasOutput.textContent = "Error: " + data.error + "\n" + (data.details || "");
+          ideasOutput.textContent = "Error: " + data.error + "\\n" + (data.details || "");
           showToast("Brainstorming failed", "error");
           return;
         }
 
-        ideasOutput.textContent = data.brainstorming || "(no brainstorming text)";
+        const messages = data.messages || [
+          { role: "user", text: ideaText },
+          { role: "assistant", text: data.brainstorming || "" }
+        ];
+        const convoText = data.conversationText || renderConversationFromMessages(messages);
+
+        ideasOutput.textContent = convoText || "(no brainstorming text)";
         lastIdeaId = data.ideaId || null;
+        ideaFollowupInput.value = "";
         showToast("Brainstorming complete!", "success");
 
         if (data.estimatedCost) {
           const formatted = data.estimatedCost.toFixed(4);
-          ideasCost.innerHTML = `<span class="${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
+          ideasCost.innerHTML = `<span class="\${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
         }
 
         loadSavedIdeas();
@@ -394,6 +432,61 @@
     }
 
     ideasBtn.addEventListener("click", handleBrainstorm);
+
+    async function handleIdeaFollowup() {
+      const followupText = ideaFollowupInput.value.trim();
+      if (!lastIdeaId) {
+        showToast("Start a brainstorm first, then ask a follow up.", "info");
+        return;
+      }
+      if (!followupText) {
+        showToast("Enter a follow up question first", "error");
+        return;
+      }
+
+      const mode = modeSelect.value === "deep" ? "deep" : "standard";
+      const repoFullName = projectSelect.value || "";
+
+      setLoading(ideasFollowupBtn, true, "Ask follow-up");
+      ideasFollowupHint.textContent = "";
+      ideasOutput.classList.remove("empty-state");
+
+      try {
+        const res = await fetch("/api/ideas/" + encodeURIComponent(lastIdeaId) + "/reply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repoFullName, followupText, mode })
+        });
+        const data = await res.json();
+        if (data.error) {
+          ideasOutput.textContent = "Error: " + data.error + "\\n" + (data.details || "");
+          showToast("Follow up failed", "error");
+          return;
+        }
+
+        const messages = data.messages || [];
+        const convoText = data.conversationText || renderConversationFromMessages(messages);
+        ideasOutput.textContent = convoText || "(no brainstorming text)";
+        lastIdeaId = data.ideaId || lastIdeaId;
+        ideaFollowupInput.value = "";
+        showToast("Follow up added", "success");
+
+        if (data.estimatedCost) {
+          const formatted = data.estimatedCost.toFixed(4);
+          ideasCost.innerHTML = `<span class="\${data.costWarning ? "cost-warning" : "cost-normal"}">Last call estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
+        }
+
+        loadSavedIdeas();
+      } catch (err) {
+        console.error(err);
+        ideasOutput.textContent = "Error running follow up.";
+        showToast("Network error", "error");
+      } finally {
+        setLoading(ideasFollowupBtn, false, "Ask follow up");
+      }
+    }
+
+    ideasFollowupBtn.addEventListener("click", handleIdeaFollowup);
 
     starCurrentIdeaBtn.addEventListener("click", async () => {
       if (!lastIdeaId) {
@@ -451,7 +544,7 @@
         });
         const data = await res.json();
         if (data.error) {
-          planSummary.textContent = "Error: " + data.error + "\n" + (data.details || "");
+          planSummary.textContent = "Error: " + data.error + "\\n" + (data.details || "");
           showToast("Planning failed", "error");
           return;
         }
@@ -462,24 +555,14 @@
 
         if (estimatedCost) {
           const formatted = estimatedCost.toFixed(4);
-          planCost.innerHTML = `<span class="${costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${modelUsed}${costWarning ? " (higher than usual)" : ""}</span>`;
+          planCost.innerHTML = `<span class="\${costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${modelUsed}${costWarning ? " (higher than usual)" : ""}</span>`;
         }
 
         let summaryText = "";
         if (plan.planText) {
           summaryText = plan.planText;
         } else {
-          summaryText += `Stack: ${plan.stack || "unknown"}\n`;
-          summaryText += `Feasible: ${plan.feasible}\n`;
-          if (plan.comment) {
-            summaryText += `Comment: ${plan.comment}\n\n`;
-          }
-          if (Array.isArray(plan.steps) && plan.steps.length) {
-            summaryText += "Steps:\n";
-            plan.steps.forEach((s, idx) => {
-              summaryText += `${idx + 1}. ${s}\n`;
-            });
-          }
+          summaryText = JSON.stringify(plan, null, 2);
         }
         planSummary.textContent = summaryText || "(no plan text)";
 
@@ -490,9 +573,9 @@
             const item = document.createElement("div");
             item.className = "file-item";
 
-            const path = document.createElement("div");
-            path.className = "file-path";
-            path.textContent = file.path;
+            const pathDiv = document.createElement("div");
+            pathDiv.className = "file-path";
+            pathDiv.textContent = file.path;
 
             const reason = document.createElement("div");
             reason.className = "file-reason";
@@ -513,7 +596,7 @@
             });
 
             actions.appendChild(useBtn);
-            item.appendChild(path);
+            item.appendChild(pathDiv);
             item.appendChild(reason);
             item.appendChild(actions);
             filesList.appendChild(item);
@@ -590,7 +673,7 @@
         });
         const data = await res.json();
         if (data.error) {
-          updatedContent.value = "// Error: " + data.error + "\n" + (data.details || "");
+          updatedContent.value = "// Error: " + data.error + "\\n" + (data.details || "");
           showToast("Update failed", "error");
           return;
         }
@@ -599,7 +682,7 @@
 
         if (data.estimatedCost) {
           const formatted = data.estimatedCost.toFixed(4);
-          editCost.innerHTML = `<span class="${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
+          editCost.innerHTML = `<span class="\${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
         }
       } catch (err) {
         console.error(err);
@@ -635,7 +718,7 @@
         });
         const data = await res.json();
         if (data.error) {
-          debugOutput.textContent = "Error: " + data.error + "\n" + (data.details || "");
+          debugOutput.textContent = "Error: " + data.error + "\\n" + (data.details || "");
           showToast("Debug failed", "error");
           return;
         }
@@ -644,7 +727,7 @@
 
         if (data.estimatedCost) {
           const formatted = data.estimatedCost.toFixed(4);
-          debugCost.innerHTML = `<span class="${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
+          debugCost.innerHTML = `<span class="\${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
         }
       } catch (err) {
         console.error(err);
@@ -698,12 +781,14 @@
 
           const viewBtn = document.createElement("button");
           viewBtn.textContent = "View";
-          viewBtn.title = "View full brainstorm output";
+          viewBtn.title = "View full brainstorm conversation";
           viewBtn.addEventListener("click", () => {
             ideaTextInput.value = item.ideaText || "";
-            ideasOutput.textContent = item.brainstorming || "(no output)";
+            const convo = renderConversationFromIdea(item);
+            ideasOutput.textContent = convo || "(no output)";
             ideasOutput.classList.remove("empty-state");
             lastIdeaId = item.id;
+            ideaFollowupInput.value = "";
             activateTab("work");
             window.scrollTo({ top: ideasOutput.offsetTop - 40, behavior: "smooth" });
           });
@@ -848,6 +933,9 @@
         if (active === ideaTextInput) {
           e.preventDefault();
           handleBrainstorm();
+        } else if (active === ideaFollowupInput) {
+          e.preventDefault();
+          handleIdeaFollowup();
         } else if (active === taskInput) {
           e.preventDefault();
           handlePlan();
