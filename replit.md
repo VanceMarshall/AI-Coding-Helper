@@ -1,20 +1,35 @@
-# Node.js Template
+# AI Code Helper
 
 ## Overview
-A blank Node.js template ready for development.
+A web application that helps developers brainstorm ideas, plan code changes, edit files, and debug errors using OpenAI's API and GitHub integration.
 
 ## Recent Changes
+- **December 07, 2025**: 
+  - Removed "Show pinned only" checkbox feature
+  - Added "None (new idea)" as default option in project dropdown for brainstorming without project context
+  - Fixed JavaScript errors and verified brainstorm flow works end-to-end
+
 - **December 04, 2025**: 
-  - Installed Node.js 20
-  - Created basic project structure
-  - Renamed Public to public
-  - Cleaned up unnecessary files
+  - Initial project setup with Node.js 20
+  - Created Express server with OpenAI and GitHub API integration
+  - Built mobile-friendly UI with emoji icons, toast notifications, and keyboard shortcuts
 
 ## Project Structure
-- `index.js` - Main entry point
-- `package.json` - Project configuration and dependencies
-- `.gitignore` - Git ignore rules for Node.js
-- `public/` - Static assets folder
+- `server.js` - Express server with API endpoints for brainstorming, planning, and GitHub integration
+- `public/index.html` - Single-page application with all UI components
+- `pinnedProjects.json` - Configuration for pinned GitHub repositories
+- `package.json` - Project dependencies (express, openai, node-fetch, cors)
+
+## Features
+- **Brainstorm**: Ask questions about code architecture, get ideas for new features
+- **Plan**: Create detailed implementation plans for code changes
+- **Edit**: Generate code edits for specific files
+- **Debug**: Get help fixing errors in your code
+- **GitHub Integration**: Connect to your repositories for context-aware assistance
+
+## Environment Variables
+- `OPENAI_API_KEY` - Required for AI functionality
+- `GITHUB_TOKEN` - Required for GitHub repository access
 
 ## Getting Started
-The project is set up and ready to use. You can start adding your code to `index.js` or create additional files as needed.
+The app runs on port 5000. Select a project from the dropdown or use "None (new idea)" to brainstorm without project context.
