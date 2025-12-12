@@ -4,6 +4,11 @@
 A web application that helps developers brainstorm ideas, plan code changes, edit files, and debug errors using OpenAI's API and GitHub integration.
 
 ## Recent Changes
+- **December 12, 2025**: 
+  - Updated to GPT-4.1 models (GPT-4.1 mini for Standard, GPT-4.1 for Deep dive)
+  - GPT-4.1 has 54.6% success rate on coding benchmarks vs 33.2% for GPT-4o
+  - Note: GPT-5.2 requires OpenAI organization verification - can upgrade later via MINI_MODEL and FULL_MODEL env vars
+
 - **December 07, 2025**: 
   - Removed "Show pinned only" checkbox feature
   - Added "None (new idea)" as default option in project dropdown for brainstorming without project context
