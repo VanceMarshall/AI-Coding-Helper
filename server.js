@@ -22,13 +22,13 @@ if (!openaiApiKey) {
 const openai = new OpenAI({ apiKey: openaiApiKey });
 
 // Default models - you can override with env variables if you want
-const MINI_MODEL = process.env.MINI_MODEL || "gpt-4.1-mini";  // Fast, efficient
-const FULL_MODEL = process.env.FULL_MODEL || "gpt-4.1";       // Best for coding
+const MINI_MODEL = process.env.MINI_MODEL || "gpt-5.2-chat-latest";  // GPT-5.2 Instant
+const FULL_MODEL = process.env.FULL_MODEL || "gpt-5.2";              // GPT-5.2 Thinking
 
 // Approx pricing per token (for cost estimates only)
 const MODEL_PRICES = {
-  [MINI_MODEL]: { input: 0.4 / 1_000_000, output: 1.6 / 1_000_000 }, // $0.40 / $1.60 per 1M
-  [FULL_MODEL]: { input: 2.0 / 1_000_000, output: 8.0 / 1_000_000 }, // $2.00 / $8.00 per 1M
+  [MINI_MODEL]: { input: 1.75 / 1_000_000, output: 14.0 / 1_000_000 }, // GPT-5.2 pricing
+  [FULL_MODEL]: { input: 1.75 / 1_000_000, output: 14.0 / 1_000_000 }, // $1.75 / $14 per 1M
 };
 
 function pickModel(mode) {

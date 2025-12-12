@@ -158,5 +158,25 @@
     "starred": false,
     "createdAt": "2025-12-12T16:25:57.836Z",
     "updatedAt": "2025-12-12T16:25:57.836Z"
+  },
+  {
+    "id": "mj334545-qsksyb7m",
+    "repoFullName": null,
+    "mode": "standard",
+    "ideaText": "What is 2+2?",
+    "brainstorming": "**Answer:**  \n- **2 + 2 = 4**\n\n**Practical ways to compute this (for fun or implementation):**\n- **Mental math:** Just add the two numbers.\n- **Calculator:** Enter `2 + 2`.\n- **In code:**  \n  - **JavaScript:** `2 + 2`  \n  - **Python:** `2 + 2`  \n  - **Any language:** Use the `+` operator for addition.\n\n**If this were part of an existing codebase:**\n- Ensure you’re working with **numbers**, not strings (e.g., `\"2\" + \"2\"` → `\"22\"` in some languages).\n- Add a simple unit test:\n  - Input: `2, 2`\n  - Expected output: `4`\n\nIf you had a deeper goal behind this (e.g., testing logic, validating inputs, or building a calculator feature), tell me more and I’ll help refine it.",
+    "messages": [
+      {
+        "role": "user",
+        "text": "What is 2+2?"
+      },
+      {
+        "role": "assistant",
+        "text": "**Answer:**  \n- **2 + 2 = 4**\n\n**Practical ways to compute this (for fun or implementation):**\n- **Mental math:** Just add the two numbers.\n- **Calculator:** Enter `2 + 2`.\n- **In code:**  \n  - **JavaScript:** `2 + 2`  \n  - **Python:** `2 + 2`  \n  - **Any language:** Use the `+` operator for addition.\n\n**If this were part of an existing codebase:**\n- Ensure you’re working with **numbers**, not strings (e.g., `\"2\" + \"2\"` → `\"22\"` in some languages).\n- Add a simple unit test:\n  - Input: `2, 2`\n  - Expected output: `4`\n\nIf you had a deeper goal behind this (e.g., testing logic, validating inputs, or building a calculator feature), tell me more and I’ll help refine it."
+      }
+    ],
+    "starred": false,
+    "createdAt": "2025-12-12T16:31:45.124Z",
+    "updatedAt": "2025-12-12T16:31:45.124Z"
   }
 ]
