@@ -22,8 +22,8 @@ if (!openaiApiKey) {
 const openai = new OpenAI({ apiKey: openaiApiKey });
 
 // Default models - you can override with env variables if you want
-const MINI_MODEL = process.env.MINI_MODEL || "gpt-4.1-mini";
-const FULL_MODEL = process.env.FULL_MODEL || "gpt-4.1";
+const MINI_MODEL = process.env.MINI_MODEL || "gpt-4.1-mini";  // Fast, efficient
+const FULL_MODEL = process.env.FULL_MODEL || "gpt-4.1";       // Best for coding
 
 // Approx pricing per token (for cost estimates only)
 const MODEL_PRICES = {

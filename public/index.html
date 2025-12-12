@@ -91,8 +91,8 @@
     <div>
       <label for="modeSelect" title="Choose the AI model to use">Mode</label>
       <select id="modeSelect" title="Standard is faster, Deep dive is more thorough">
-        <option value="standard">Standard (mini)</option>
-        <option value="deep">Deep dive (stronger model)</option>
+        <option value="standard">Standard (GPT-4.1 mini)</option>
+        <option value="deep">Deep dive (GPT-4.1)</option>
       </select>
       <div id="modeHint" class="small"></div>
     </div>
@@ -313,9 +313,9 @@
     function updateModeHint() {
       const mode = modeSelect.value;
       if (mode === "deep") {
-        modeHint.textContent = "Deep dive uses a stronger model and more context. Usually higher quality and higher cost.";
+        modeHint.textContent = "GPT-4.1 - Best for complex tasks, coding, and planning. Higher quality.";
       } else {
-        modeHint.textContent = "Standard uses a mini model. Good for most single file changes.";
+        modeHint.textContent = "GPT-4.1 mini - Fast responses for routine queries and simple tasks.";
       }
     }
 
