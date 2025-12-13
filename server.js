@@ -21,18 +21,29 @@ if (!openaiApiKey) {
 
 const openai = new OpenAI({ apiKey: openaiApiKey });
 
-// Default models - you can override with env variables if you want
-const MINI_MODEL = process.env.MINI_MODEL || "gpt-5.2-chat-latest";  // GPT-5.2 Instant
-const FULL_MODEL = process.env.FULL_MODEL || "gpt-5.2";              // GPT-5.2 Thinking
+// Model configuration with fallbacks
+const MODEL_CONFIG = {
+  standard: {
+    primary: process.env.MINI_MODEL || "gpt-5.2-chat-latest",
+    fallback: "gpt-4.1-mini"
+  },
+  deep: {
+    primary: process.env.FULL_MODEL || "gpt-5.2",
+    fallback: "gpt-4.1"
+  }
+};
 
 // Approx pricing per token (for cost estimates only)
 const MODEL_PRICES = {
-  [MINI_MODEL]: { input: 1.75 / 1_000_000, output: 14.0 / 1_000_000 }, // GPT-5.2 pricing
-  [FULL_MODEL]: { input: 1.75 / 1_000_000, output: 14.0 / 1_000_000 }, // $1.75 / $14 per 1M
+  "gpt-5.2-chat-latest": { input: 1.75 / 1_000_000, output: 14.0 / 1_000_000 },
+  "gpt-5.2": { input: 1.75 / 1_000_000, output: 14.0 / 1_000_000 },
+  "gpt-4.1-mini": { input: 0.4 / 1_000_000, output: 1.6 / 1_000_000 },
+  "gpt-4.1": { input: 2.0 / 1_000_000, output: 8.0 / 1_000_000 },
 };
 
-function pickModel(mode) {
-  return mode === "deep" ? FULL_MODEL : MINI_MODEL;
+function getModelsForMode(mode) {
+  const config = mode === "deep" ? MODEL_CONFIG.deep : MODEL_CONFIG.standard;
+  return [config.primary, config.fallback];
 }
 
 function estimateCost(model, usage) {
@@ -57,24 +68,45 @@ async function callModelWithInstructions(
   inputText,
   { maxOutputTokens = 2048 } = {}
 ) {
-  const model = pickModel(mode);
+  const models = getModelsForMode(mode);
   if (!openaiApiKey) {
     throw new Error("OPENAI_API_KEY is not configured");
   }
 
-  const response = await openai.responses.create({
-    model,
-    instructions,
-    input: inputText,
-    max_output_tokens: maxOutputTokens,
-  });
+  let lastError = null;
+  let usedFallback = false;
 
-  const text = response.output_text || "";
-  const usage = response.usage || null;
-  const estimatedCost = estimateCost(model, usage);
-  const costWarning = estimatedCost != null && estimatedCost > 0.25;
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    try {
+      const response = await openai.responses.create({
+        model,
+        instructions,
+        input: inputText,
+        max_output_tokens: maxOutputTokens,
+      });
 
-  return { text, usage, modelUsed: model, estimatedCost, costWarning };
+      const text = response.output_text || "";
+      const usage = response.usage || null;
+      const estimatedCost = estimateCost(model, usage);
+      const costWarning = estimatedCost != null && estimatedCost > 0.25;
+
+      return { 
+        text, 
+        usage, 
+        modelUsed: model, 
+        estimatedCost, 
+        costWarning,
+        usedFallback: i > 0
+      };
+    } catch (err) {
+      console.warn(`Model ${model} failed, trying fallback...`, err.message);
+      lastError = err;
+      usedFallback = true;
+    }
+  }
+
+  throw lastError || new Error("All models failed");
 }
 
 // ---------- Simple JSON storage ----------

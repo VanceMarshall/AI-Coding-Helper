@@ -178,5 +178,65 @@
     "starred": false,
     "createdAt": "2025-12-12T16:31:45.124Z",
     "updatedAt": "2025-12-12T16:31:45.124Z"
+  },
+  {
+    "id": "mj3p610u-do1q8mx0",
+    "repoFullName": null,
+    "mode": "standard",
+    "ideaText": "Hello, test",
+    "brainstorming": "Hello! 👋 Looks like a quick test—happy to help. Here are a few practical ways we can proceed:\n\n- **If you’re just checking the system**\n  - ✅ Everything is working—messages are coming through.\n  - You can now ask a real question or share an idea.\n\n- **If you have a product or software idea**\n  - Share a short description (problem, target users, goal).\n  - I can help you:\n    - Refine the idea into a clear MVP\n    - Suggest features and tech stack\n    - Identify risks and next steps\n\n- **If you’re debugging or building something**\n  - Paste:\n    - The code snippet\n    - The error message or unexpected behavior\n    - Your tech stack (e.g., React, Node, Python, etc.)\n  - I’ll help diagnose and suggest concrete fixes.\n\n- **If you want inspiration**\n  - I can propose:\n    - SaaS ideas\n    - Internal tools\n    - AI-powered features\n    - Side projects with realistic scope\n\n👉 **Next step:** Tell me what you’re testing or what you want help with (even a rough thought is fine).",
+    "messages": [
+      {
+        "role": "user",
+        "text": "Hello, test"
+      },
+      {
+        "role": "assistant",
+        "text": "Hello! 👋 Looks like a quick test—happy to help. Here are a few practical ways we can proceed:\n\n- **If you’re just checking the system**\n  - ✅ Everything is working—messages are coming through.\n  - You can now ask a real question or share an idea.\n\n- **If you have a product or software idea**\n  - Share a short description (problem, target users, goal).\n  - I can help you:\n    - Refine the idea into a clear MVP\n    - Suggest features and tech stack\n    - Identify risks and next steps\n\n- **If you’re debugging or building something**\n  - Paste:\n    - The code snippet\n    - The error message or unexpected behavior\n    - Your tech stack (e.g., React, Node, Python, etc.)\n  - I’ll help diagnose and suggest concrete fixes.\n\n- **If you want inspiration**\n  - I can propose:\n    - SaaS ideas\n    - Internal tools\n    - AI-powered features\n    - Side projects with realistic scope\n\n👉 **Next step:** Tell me what you’re testing or what you want help with (even a rough thought is fine)."
+      }
+    ],
+    "starred": false,
+    "createdAt": "2025-12-13T02:49:04.686Z",
+    "updatedAt": "2025-12-13T02:49:04.686Z"
+  },
+  {
+    "id": "mj3p77xq-6zmdc994",
+    "repoFullName": null,
+    "mode": "standard",
+    "ideaText": "Quick test",
+    "brainstorming": "Sure! Since this is a **quick test**, here’s a lightweight but useful response you can react to or build on.\n\n### What we can do next (pick one)\n- ✅ **Clarify the idea or problem**\n  - What are you testing? (feature idea, UX flow, bug, performance, AI use, etc.)\n  - Who is the user and what pain are they feeling?\n- ✅ **Brainstorm a small feature**\n  - Example: “Add a quick feedback button”\n  - Example: “Automate a manual step with AI or rules”\n- ✅ **Validate feasibility**\n  - Time to build (hours vs days)\n  - Tech stack fit (frontend, backend, AI, infra)\n- ✅ **Prototype quickly**\n  - Low‑fi: wireframe or user flow\n  - High‑fi: small API endpoint or UI component\n\n### Practical options (depending on your goal)\n- **If this is a product idea test**\n  - Write a 1‑sentence value proposition\n  - List 3 core user actions\n  - Define success metric (e.g., clicks, saves, conversions)\n- **If this is a technical test**\n  - Add a simple endpoint (e.g., `/health` or `/test`)\n  - Log input/output to verify data flow\n  - Add a feature flag to isolate behavior\n- **If this is an AI/LLM test**\n  - Start with a single prompt + fixed input\n  - Log responses and latency\n  - Add guardrails (max tokens, retries, fallbacks)\n\n### Example “quick test” implementation\n- Frontend:  \n  - Button → calls `/api/test`\n  - Display response inline\n- Backend:\n  - Simple route returning mock data or timestamp\n- Goal:\n  - Confirm end‑to‑end flow works in < 5 minutes\n\n### Next step\nReply with **one sentence** describing what you’re testing (idea, bug, or feature), and I’ll help you:\n- refine it,\n- design the solution,\n- or sketch actual code.",
+    "messages": [
+      {
+        "role": "user",
+        "text": "Quick test"
+      },
+      {
+        "role": "assistant",
+        "text": "Sure! Since this is a **quick test**, here’s a lightweight but useful response you can react to or build on.\n\n### What we can do next (pick one)\n- ✅ **Clarify the idea or problem**\n  - What are you testing? (feature idea, UX flow, bug, performance, AI use, etc.)\n  - Who is the user and what pain are they feeling?\n- ✅ **Brainstorm a small feature**\n  - Example: “Add a quick feedback button”\n  - Example: “Automate a manual step with AI or rules”\n- ✅ **Validate feasibility**\n  - Time to build (hours vs days)\n  - Tech stack fit (frontend, backend, AI, infra)\n- ✅ **Prototype quickly**\n  - Low‑fi: wireframe or user flow\n  - High‑fi: small API endpoint or UI component\n\n### Practical options (depending on your goal)\n- **If this is a product idea test**\n  - Write a 1‑sentence value proposition\n  - List 3 core user actions\n  - Define success metric (e.g., clicks, saves, conversions)\n- **If this is a technical test**\n  - Add a simple endpoint (e.g., `/health` or `/test`)\n  - Log input/output to verify data flow\n  - Add a feature flag to isolate behavior\n- **If this is an AI/LLM test**\n  - Start with a single prompt + fixed input\n  - Log responses and latency\n  - Add guardrails (max tokens, retries, fallbacks)\n\n### Example “quick test” implementation\n- Frontend:  \n  - Button → calls `/api/test`\n  - Display response inline\n- Backend:\n  - Simple route returning mock data or timestamp\n- Goal:\n  - Confirm end‑to‑end flow works in < 5 minutes\n\n### Next step\nReply with **one sentence** describing what you’re testing (idea, bug, or feature), and I’ll help you:\n- refine it,\n- design the solution,\n- or sketch actual code."
+      }
+    ],
+    "starred": false,
+    "createdAt": "2025-12-13T02:50:00.301Z",
+    "updatedAt": "2025-12-13T02:50:00.301Z"
+  },
+  {
+    "id": "mj3p7l91-q5gw7xlh",
+    "repoFullName": null,
+    "mode": "standard",
+    "ideaText": "Quick test",
+    "brainstorming": "Got it — quick test acknowledged 👍  \nHere’s a concise, useful response format with practical options.\n\n**How I can help in this kind of scenario**\n- ✅ Validate an idea quickly (feasibility, scope, risks)\n- ✅ Suggest MVP features vs. “nice-to-haves”\n- ✅ Propose a simple technical approach (frontend, backend, data)\n- ✅ Outline next implementation steps\n- ✅ Help debug or extend existing code\n\n**If this were a real feature test, next steps could be:**\n- Clarify the goal in **one sentence** (what problem are we solving?)\n- Identify:\n  - Target user\n  - Core action (what the user does)\n  - Desired outcome\n- Decide whether this is:\n  - A UI tweak\n  - A backend logic change\n  - A new feature\n  - A performance or reliability issue\n\n**Example quick implementation pattern**\n- Start with a minimal version (MVP)\n- Add logging or metrics early\n- Ship behind a feature flag if possible\n- Iterate based on feedback\n\nIf you want, send:\n- A real idea ✅  \n- A code snippet ✅  \n- A bug description ✅  \n\nAnd I’ll respond with concrete recommendations and implementation guidance.",
+    "messages": [
+      {
+        "role": "user",
+        "text": "Quick test"
+      },
+      {
+        "role": "assistant",
+        "text": "Got it — quick test acknowledged 👍  \nHere’s a concise, useful response format with practical options.\n\n**How I can help in this kind of scenario**\n- ✅ Validate an idea quickly (feasibility, scope, risks)\n- ✅ Suggest MVP features vs. “nice-to-haves”\n- ✅ Propose a simple technical approach (frontend, backend, data)\n- ✅ Outline next implementation steps\n- ✅ Help debug or extend existing code\n\n**If this were a real feature test, next steps could be:**\n- Clarify the goal in **one sentence** (what problem are we solving?)\n- Identify:\n  - Target user\n  - Core action (what the user does)\n  - Desired outcome\n- Decide whether this is:\n  - A UI tweak\n  - A backend logic change\n  - A new feature\n  - A performance or reliability issue\n\n**Example quick implementation pattern**\n- Start with a minimal version (MVP)\n- Add logging or metrics early\n- Ship behind a feature flag if possible\n- Iterate based on feedback\n\nIf you want, send:\n- A real idea ✅  \n- A code snippet ✅  \n- A bug description ✅  \n\nAnd I’ll respond with concrete recommendations and implementation guidance."
+      }
+    ],
+    "starred": false,
+    "createdAt": "2025-12-13T02:50:17.556Z",
+    "updatedAt": "2025-12-13T02:50:17.556Z"
   }
 ]
