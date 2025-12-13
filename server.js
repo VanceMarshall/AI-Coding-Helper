@@ -247,6 +247,33 @@ async function getFileFromGitHub(repoFullName, filePath) {
   return buff.toString("utf8");
 }
 
+function extractJson(text) {
+  if (!text || typeof text !== "string") return null;
+  
+  const jsonBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonBlockMatch) {
+    try {
+      return JSON.parse(jsonBlockMatch[1].trim());
+    } catch (e) {
+    }
+  }
+  
+  try {
+    return JSON.parse(text.trim());
+  } catch (e) {
+  }
+  
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+    }
+  }
+  
+  return null;
+}
+
 function detectStack(filePaths) {
   const files = new Set(filePaths || []);
   const has = (name) =>
@@ -639,11 +666,9 @@ app.post("/api/plan", async (req, res) => {
       maxOutputTokens: 2200,
     });
 
-    let planObj;
-    try {
-      planObj = JSON.parse(text);
-    } catch (err) {
-      console.warn("Plan JSON parse failed, returning raw text");
+    let planObj = extractJson(text);
+    if (!planObj) {
+      console.warn("Plan JSON parse failed in /api/plan, returning raw text");
       planObj = {
         planText: text,
         files: [],
@@ -784,10 +809,8 @@ app.post("/api/plan/from-idea", async (req, res) => {
       maxOutputTokens: 2200,
     });
 
-    let planObj;
-    try {
-      planObj = JSON.parse(text);
-    } catch (err) {
+    let planObj = extractJson(text);
+    if (!planObj) {
       console.warn(
         "Plan JSON parse failed in /api/plan/from-idea, returning raw text"
       );
