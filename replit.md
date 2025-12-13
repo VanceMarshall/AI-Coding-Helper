@@ -5,6 +5,8 @@ A web application that helps developers brainstorm ideas, plan code changes, edi
 
 ## Recent Changes
 - **December 13, 2025**: 
+  - Fixed Generate Plan JSON parsing - AI responses wrapped in markdown code blocks now parse correctly
+  - Added extractJson() helper function that handles code fences, raw JSON, and embedded JSON objects
   - Added full GitHub repo context to all AI features - AI can now see all files in the selected repository
   - AI detects tech stack automatically and references actual file structure in responses
   - Added model fallback logic - tries GPT-5.2 first, falls back to GPT-4.1 if unavailable
