@@ -4,6 +4,11 @@
 A web application that helps developers brainstorm ideas, plan code changes, edit files, and debug errors using OpenAI's API and GitHub integration.
 
 ## Recent Changes
+- **December 13, 2025**: 
+  - Added full GitHub repo context to all AI features - AI can now see all files in the selected repository
+  - AI detects tech stack automatically and references actual file structure in responses
+  - Added model fallback logic - tries GPT-5.2 first, falls back to GPT-4.1 if unavailable
+
 - **December 12, 2025**: 
   - Upgraded to GPT-5.2 models (GPT-5.2 Instant for Standard, GPT-5.2 Thinking for Deep dive)
   - GPT-5.2 is OpenAI's most capable model - matches human experts on 70% of professional tasks
