@@ -334,15 +334,38 @@ app.post("/api/ideas", async (req, res) => {
   }
 
   try {
+    let filePaths = [];
+    let stack = "";
+    if (repoFullName) {
+      try {
+        filePaths = await listRepoFiles(repoFullName);
+        stack = detectStack(filePaths);
+      } catch (err) {
+        console.warn("Could not list repo files for ideas, continuing", err.message);
+      }
+    }
+
     const instructions =
       "You are an expert full stack engineer and product partner. " +
       "Help brainstorm and refine software ideas for the user. " +
       "Be concrete, realistic, and helpful. Suggest next steps. " +
-      "You may be asked about new features or debugging issues.";
+      "You may be asked about new features or debugging issues. " +
+      "When the user asks about specific files or code, reference the file structure provided.";
 
     let context = "";
     if (repoFullName) {
       context += `Project: ${repoFullName}\n`;
+      if (stack) {
+        context += `Detected stack: ${stack}\n`;
+      }
+      if (filePaths.length > 0) {
+        context += `\nFiles in the repository (${filePaths.length} total):\n`;
+        context += filePaths.slice(0, 150).map((p) => "- " + p).join("\n");
+        if (filePaths.length > 150) {
+          context += `\n... and ${filePaths.length - 150} more files`;
+        }
+        context += "\n\n";
+      }
     }
     context +=
       "User idea or question:\n" +
@@ -425,6 +448,19 @@ app.post("/api/ideas/:id/reply", async (req, res) => {
     }
 
     const idea = ideas[idx];
+    const repoFullName = idea.repoFullName || "";
+    
+    let filePaths = [];
+    let stack = "";
+    if (repoFullName) {
+      try {
+        filePaths = await listRepoFiles(repoFullName);
+        stack = detectStack(filePaths);
+      } catch (err) {
+        console.warn("Could not list repo files for reply, continuing", err.message);
+      }
+    }
+
     const messages =
       Array.isArray(idea.messages) && idea.messages.length
         ? idea.messages
@@ -437,10 +473,27 @@ app.post("/api/ideas/:id/reply", async (req, res) => {
 
     const convoForModel = buildConversationForModel(messages);
 
+    let repoContext = "";
+    if (repoFullName) {
+      repoContext += `Project: ${repoFullName}\n`;
+      if (stack) {
+        repoContext += `Detected stack: ${stack}\n`;
+      }
+      if (filePaths.length > 0) {
+        repoContext += `\nFiles in the repository (${filePaths.length} total):\n`;
+        repoContext += filePaths.slice(0, 150).map((p) => "- " + p).join("\n");
+        if (filePaths.length > 150) {
+          repoContext += `\n... and ${filePaths.length - 150} more files`;
+        }
+        repoContext += "\n\n";
+      }
+    }
+
     const instructions =
       "You are continuing a technical conversation with a developer. " +
       "Respect previous context and avoid repeating yourself. " +
-      "Give specific suggestions, code level guidance, and next steps.";
+      "Give specific suggestions, code level guidance, and next steps. " +
+      "When the user asks about specific files or code, reference the file structure provided.";
 
     const {
       text,
@@ -450,7 +503,7 @@ app.post("/api/ideas/:id/reply", async (req, res) => {
     } = await callModelWithInstructions(
       mode,
       instructions,
-      convoForModel +
+      repoContext + convoForModel +
         "\n\nAssistant: Continue the conversation by replying to the last user message.",
       { maxOutputTokens: 1800 }
     );
