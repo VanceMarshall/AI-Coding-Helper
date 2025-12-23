@@ -1,1011 +1,426 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
   <title>AI Code Helper</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <style>
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 1080px; margin: 20px auto; padding: 0 12px; }
-    label { font-weight: 600; display: block; margin-bottom: 4px; }
-    select, textarea, input[type="text"], input[type="email"] { width: 100%; margin: 0 0 12px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
-    textarea { min-height: 120px; font-family: monospace; resize: vertical; }
-    .row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 12px; flex-wrap: wrap; }
-    .row > * { flex: 1; min-width: 200px; }
-
-    button { padding: 8px 16px; cursor: pointer; border: 1px solid #ccc; border-radius: 4px; background: #f7f7f7; font-size: 14px; transition: all 0.2s; }
-    button:hover { background: #e8e8e8; }
-    button:active { transform: scale(0.98); }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
-
-    .btn-primary { background: #2563eb; color: white; border-color: #2563eb; font-weight: 600; }
-    .btn-primary:hover { background: #1d4ed8; }
-
-    pre { background: #f3f3f3; padding: 12px; overflow: auto; white-space: pre-wrap; border-radius: 4px; font-size: 13px; }
-    .small { font-size: 12px; color: #555; }
-    .file-list { border: 1px solid #ddd; padding: 12px; margin-top: 8px; border-radius: 4px; }
-    .file-item { display: flex; flex-direction: column; border-bottom: 1px solid #eee; padding: 8px 0; }
-    .file-item:last-child { border-bottom: none; }
-    .file-path { font-family: monospace; font-size: 13px; }
-    .file-reason { font-size: 12px; color: #555; margin-top: 4px; }
-    .file-actions { margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; }
-    .cost-warning { color: #b34700; font-size: 12px; }
-    .cost-normal { color: #008000; font-size: 12px; }
-    .section { margin-top: 28px; padding-bottom: 20px; border-bottom: 1px solid #eee; }
-    .section:last-child { border-bottom: none; }
-
-    .tabs { display: flex; gap: 0; margin: 16px 0; border-bottom: 2px solid #ddd; }
-    .tab { padding: 10px 20px; border: none; background: transparent; cursor: pointer; font-size: 14px; border-bottom: 2px solid transparent; margin-bottom: -2px; }
-    .tab:hover { background: #f5f5f5; }
-    .tab.active { border-bottom-color: #2563eb; font-weight: 600; color: #2563eb; }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
-
-    h2 { margin: 0 0 12px; font-size: 18px; display: flex; align-items: center; gap: 8px; }
-    h3 { margin: 16px 0 8px; font-size: 14px; color: #333; }
-
-    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #ccc; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 8px; vertical-align: middle; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    .toast-container { position: fixed; top: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; gap: 8px; }
-    .toast { padding: 12px 16px; border-radius: 6px; color: white; font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); animation: slideIn 0.3s ease; max-width: 320px; }
-    .toast-success { background: #16a34a; }
-    .toast-error { background: #dc2626; }
-    .toast-info { background: #2563eb; }
-    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-
-    .empty-state { text-align: center; padding: 24px; color: #666; }
-    .empty-state-icon { font-size: 32px; margin-bottom: 8px; }
-
-    .kbd { background: #f3f3f3; border: 1px solid #ddd; border-radius: 3px; padding: 2px 6px; font-size: 11px; font-family: monospace; }
-
-    @media (max-width: 600px) {
-      body { margin: 10px auto; padding: 0 8px; }
-      .row { flex-direction: column; }
-      .row > * { min-width: 100%; }
-      .tabs { overflow-x: auto; }
-      .tab { padding: 8px 12px; font-size: 13px; white-space: nowrap; }
-      h1 { font-size: 22px; }
-      h2 { font-size: 16px; }
-      button { width: 100%; }
-      .file-actions button { width: auto; }
-      .toast-container { left: 10px; right: 10px; }
-      .toast { max-width: 100%; }
+    :root{--bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--bg4:#30363d;--border:#30363d;--text:#e6edf3;--text2:#8b949e;--text3:#6e7681;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;--purple:#a371f7;--sans:'Plus Jakarta Sans',sans-serif;--mono:'JetBrains Mono',monospace}
+    *{box-sizing:border-box;margin:0;padding:0}html,body{height:100%;overflow:hidden}
+    body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+    .app{display:flex;height:100vh;height:100dvh}
+    .sidebar{width:280px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;z-index:100}
+    .sidebar-header{padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .sidebar-header h1{font-size:18px;display:flex;align-items:center;gap:8px}
+    .sidebar-header h1 span{background:linear-gradient(135deg,var(--accent),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .close-sidebar{display:none;background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;padding:4px}
+    .project-select{padding:12px 16px;border-bottom:1px solid var(--border)}
+    .project-select label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:6px}
+    .project-select select{width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:14px}
+    .sidebar-actions{padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+    .action-btn{padding:12px 16px;border:none;border-radius:8px;font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+    .action-btn.primary{background:var(--accent);color:var(--bg)}
+    .action-btn.secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border)}
+    .action-btn:hover{opacity:0.9}
+    .conversations{flex:1;overflow-y:auto;padding:8px}
+    .conv-item{padding:12px;border-radius:8px;cursor:pointer;margin-bottom:4px;display:flex;align-items:center;gap:8px;font-size:14px}
+    .conv-item:hover{background:var(--bg4)}.conv-item.active{background:var(--bg3)}
+    .conv-item .title{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .conv-item .type-badge{font-size:10px;padding:2px 6px;border-radius:4px;background:var(--bg4);color:var(--text3)}
+    .conv-item .type-badge.planning{background:rgba(210,153,34,0.2);color:var(--yellow)}
+    .sidebar-footer{padding:12px 16px;border-top:1px solid var(--border)}
+    .sidebar-footer a{color:var(--text2);text-decoration:none;font-size:13px;display:flex;align-items:center;gap:6px;padding:8px 0}
+    .sidebar-footer a:hover{color:var(--text)}
+    .main{flex:1;display:flex;flex-direction:column;min-width:0}
+    .chat-header{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:12px}
+    .menu-btn{display:none;background:none;border:none;color:var(--text);font-size:20px;cursor:pointer;padding:4px}
+    .chat-title{font-size:15px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .model-indicator{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;flex-shrink:0}
+    .model-indicator .dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
+    .messages{flex:1;overflow-y:auto;padding:16px}.messages-inner{max-width:800px;margin:0 auto}
+    .message{margin-bottom:20px;animation:fadeIn .3s}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1}}
+    .msg-header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+    .msg-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
+    .message.user .msg-avatar{background:var(--accent);color:var(--bg)}
+    .message.assistant .msg-avatar{background:linear-gradient(135deg,var(--purple),var(--accent));color:#fff}
+    .msg-author{font-weight:600}.msg-meta{font-size:11px;color:var(--text3)}
+    .msg-content{padding-left:38px}.msg-content p{margin-bottom:12px}.msg-content p:last-child{margin-bottom:0}
+    .msg-content pre{margin:12px 0;border-radius:8px;overflow:hidden}
+    .msg-content pre code{display:block;padding:12px;background:var(--bg3);overflow-x:auto;font-size:13px}
+    .msg-content code{font-family:var(--mono);background:var(--bg3);padding:2px 6px;border-radius:4px;font-size:13px}
+    .msg-content ul,.msg-content ol{margin:12px 0;padding-left:24px}.msg-content li{margin-bottom:6px}
+    .msg-content h2,.msg-content h3{margin:16px 0 8px;color:var(--text)}
+    .msg-content strong{color:var(--text)}
+    .msg-content hr{border:none;border-top:1px solid var(--border);margin:16px 0}
+    .code-header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg4);font-size:12px;color:var(--text2);flex-wrap:wrap;gap:8px}
+    .code-header .code-lang{font-weight:500}
+    .code-header .code-actions{display:flex;gap:6px}
+    .code-header button{background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;font-size:11px;padding:6px 10px;border-radius:4px;font-family:var(--sans)}
+    .code-header button:hover{background:var(--bg3);color:var(--text);border-color:var(--text3)}
+    .code-header button.apply-btn{border-color:var(--green);color:var(--green)}
+    .code-header button.apply-btn:hover{background:rgba(63,185,80,0.15)}
+    .code-header button.applied{border-color:var(--green);background:rgba(63,185,80,0.15);color:var(--green)}
+    .code-header button:disabled{opacity:0.5;cursor:not-allowed}
+    .empty-state{text-align:center;padding:40px 20px;color:var(--text2)}
+    .empty-state h2{font-size:22px;color:var(--text);margin-bottom:8px}
+    .empty-state p{margin-bottom:20px;max-width:400px;margin-left:auto;margin-right:auto}
+    .empty-actions{display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:24px}
+    .empty-actions button{padding:14px 28px;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;width:100%;max-width:260px;justify-content:center}
+    .empty-actions .primary{background:var(--accent);color:var(--bg);border:none}
+    .empty-actions .secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border)}
+    .suggestions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:20px}
+    .suggestion{padding:10px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;font-size:14px;cursor:pointer;color:var(--text)}
+    .suggestion:hover{border-color:var(--accent);color:var(--accent)}
+    .input-area{padding:12px 16px;border-top:1px solid var(--border);background:var(--bg2)}
+    .input-inner{max-width:800px;margin:0 auto}
+    .mode-indicator{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;color:var(--text2)}
+    .mode-indicator .mode-badge{padding:4px 10px;border-radius:12px;font-weight:500}
+    .mode-indicator .mode-badge.planning{background:rgba(210,153,34,0.2);color:var(--yellow)}
+    .mode-indicator .mode-badge.building{background:rgba(88,166,255,0.2);color:var(--accent)}
+    .model-toggle{display:flex;gap:4px;margin-bottom:10px;background:var(--bg3);padding:4px;border-radius:8px;width:fit-content}
+    .model-toggle button{padding:8px 14px;background:none;border:none;color:var(--text2);font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer;border-radius:6px}
+    .model-toggle button.active{background:var(--bg4);color:var(--text)}
+    .model-toggle button.active[data-mode=auto]{color:var(--yellow)}
+    .model-toggle button.active[data-mode=fast]{color:var(--green)}
+    .model-toggle button.active[data-mode=full]{color:var(--accent)}
+    .route-preview{font-size:11px;color:var(--text3);margin-bottom:8px;min-height:16px}
+    .file-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+    .file-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:16px;font-size:12px;font-family:var(--mono)}
+    .file-chip button{background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:0 2px}
+    .file-chip button:hover{color:var(--red)}
+    .input-box{position:relative}
+    .input-box textarea{width:100%;padding:14px 16px;padding-right:90px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;color:var(--text);font-family:var(--sans);font-size:15px;resize:none;min-height:52px;max-height:150px}
+    .input-box textarea:focus{outline:none;border-color:var(--accent)}
+    .input-box textarea::placeholder{color:var(--text3)}
+    .input-actions{position:absolute;right:8px;bottom:8px;display:flex;gap:6px}
+    .input-actions button{padding:10px 16px;background:var(--accent);border:none;border-radius:6px;color:var(--bg);font-weight:600;cursor:pointer;font-size:14px}
+    .input-actions button:disabled{opacity:.5;cursor:not-allowed}
+    .input-actions button.attach{background:transparent;color:var(--text2);padding:10px}
+    .input-hint{margin-top:8px;font-size:11px;color:var(--text3);display:flex;justify-content:space-between}
+    .cost-display{font-family:var(--mono)}
+    .modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px}
+    .modal.active{display:flex}
+    .modal-content{background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:100%;max-width:600px;max-height:80vh;display:flex;flex-direction:column}
+    .modal-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+    .modal-header h3{font-size:16px}
+    .modal-close{background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;padding:4px}
+    .modal-body{flex:1;overflow-y:auto;padding:16px 20px}
+    .file-search{width:100%;padding:12px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;margin-bottom:12px}
+    .file-tree{font-family:var(--mono);font-size:13px}
+    .file-item{padding:10px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px}
+    .file-item:hover{background:var(--bg4)}
+    .file-item.selected{background:rgba(88,166,255,.15);color:var(--accent)}
+    .modal-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px}
+    .modal-footer button{padding:10px 20px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer}
+    .btn-secondary{background:var(--bg3);border:1px solid var(--border);color:var(--text)}
+    .btn-primary{background:var(--accent);border:none;color:var(--bg)}
+    .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:12px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;display:none;z-index:2000;max-width:90%;text-align:center}
+    .toast.success{border-left:3px solid var(--green)}.toast.error{border-left:3px solid var(--red)}
+    .streaming-dot{width:6px;height:6px;background:var(--accent);border-radius:50%;animation:pulse 1.5s infinite;display:inline-block}
+    @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+    .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:99}
+    ::-webkit-scrollbar{width:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+    
+    /* Mobile Responsive */
+    @media(max-width:768px){
+      .sidebar{position:fixed;top:0;left:0;bottom:0;transform:translateX(-100%);transition:transform .3s ease;width:85%;max-width:320px}
+      .sidebar.open{transform:translateX(0)}
+      .sidebar-overlay.open{display:block}
+      .close-sidebar{display:block}
+      .menu-btn{display:block}
+      .chat-header{padding:12px}
+      .messages{padding:12px}
+      .msg-content{padding-left:0;margin-top:8px}
+      .msg-header{flex-wrap:wrap}
+      .input-area{padding:10px 12px}
+      .model-toggle{width:100%;justify-content:center}
+      .model-toggle button{flex:1;padding:10px 8px;font-size:12px}
+      .input-box textarea{font-size:16px;padding-right:80px}
+      .input-hint{display:none}
+      .empty-state{padding:30px 16px}
+      .empty-state h2{font-size:20px}
+      .code-header{flex-direction:column;align-items:flex-start}
+      .code-header .code-actions{width:100%;justify-content:flex-end}
     }
   </style>
 </head>
 <body>
-  <div class="toast-container" id="toastContainer"></div>
-
-  <h1>AI Code Helper</h1>
-
-  <div class="row">
-    <div>
-      <label for="projectSelect" title="Select the GitHub repository to work with">Project (GitHub repo)</label>
-      <select id="projectSelect" title="Choose a project from your repositories, or None for new ideas"></select>
-    </div>
-    <button id="refreshProjectsBtn" title="Reload your project list">Refresh</button>
-  </div>
-
-  <div class="row">
-    <div>
-      <label for="modeSelect" title="Choose the AI model to use">Mode</label>
-      <select id="modeSelect" title="Standard is faster, Deep dive is more thorough">
-        <option value="standard">Standard (GPT-5.2 Instant)</option>
-        <option value="deep">Deep dive (GPT-5.2 Thinking)</option>
-      </select>
-      <div id="modeHint" class="small"></div>
-    </div>
-  </div>
-
-  <div class="tabs">
-    <button id="tabWork" class="tab active" title="Plan and build changes">Plan & Build</button>
-    <button id="tabSaved" class="tab" title="View your saved ideas and plans">Saved</button>
-  </div>
-
-  <div id="workTab" class="tab-content active">
-    <div class="section">
-      <h2>🧠 Plan conversation</h2>
-      <div class="small">
-        Use this for "would it be possible to build" questions, architecture, or debugging.
-        If a project is selected, the assistant will use repo context to give better answers.
-        <span class="kbd">Ctrl+Enter</span> to submit.
+  <div class="toast" id="toast"></div>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h1>⚡ <span>AI Code Helper</span></h1>
+        <button class="close-sidebar" id="closeSidebar">×</button>
       </div>
-      <label for="ideaText">Message</label>
-      <textarea id="ideaText" placeholder="Example: I want to add a client portal where clients can upload PDFs and see invoices. How would we do that in this app?" title="Describe your idea, feature, or problem"></textarea>
-      <button id="ideasBtn" class="btn-primary" title="Ask the assistant using repo context when available">Ask in Plan</button>
-      <div id="ideasCost" class="small"></div>
-
-      <h3>Conversation</h3>
-      <pre id="ideasOutput" class="empty-state"><span class="empty-state-icon">💭</span><br>Ask a question above and click Ask in Plan to get started</pre>
-
-      <label for="ideaFollowup" class="small">Follow up (keeps this conversation)</label>
-      <textarea id="ideaFollowup" placeholder="Ask a follow up based on the current idea and answer..." title="Ask a follow up question for this conversation"></textarea>
-      <button id="ideasFollowupBtn" title="Ask a follow up question about this idea">Ask follow up</button>
-      <span id="ideasFollowupHint" class="small"></span>
-
-      <br />
-      <button id="generatePlanBtnTop" class="small" title="Turn this conversation into an implementation plan">📋 Generate plan from this conversation</button>
-      <br /><br />
-      <button id="starCurrentIdeaBtn" class="small" title="Save this idea for later">⭐ Star this idea</button>
-      <span id="starCurrentIdeaStatus" class="small"></span>
-    </div>
-
-    <div class="section">
-      <h2>📋 Implementation plan</h2>
-      <div class="small">
-        Generate a concrete plan with files and steps from the latest Plan conversation.
+      <div class="project-select"><label>Project</label><select id="projectSelect"><option value="">No project selected</option></select></div>
+      <div class="sidebar-actions">
+        <button class="action-btn primary" id="newProjectBtn">🚀 New Project</button>
+        <button class="action-btn secondary" id="newChatBtn">💬 New Chat</button>
       </div>
-
-      <button id="planBtn" class="btn-primary" title="Generate a step-by-step plan from the current conversation">Generate plan</button>
-      <div id="planCost" class="small"></div>
-
-      <h3>Plan</h3>
-      <pre id="planSummary" class="empty-state"><span class="empty-state-icon">📝</span><br>Use the Plan conversation above, then click Generate plan</pre>
-      <button id="starCurrentTaskBtn" class="small" title="Save this plan for later">⭐ Star this plan</button>
-      <span id="starCurrentTaskStatus" class="small"></span>
-
-      <div id="filesContainer" class="file-list" style="display:none;">
-        <div class="small">Files the planner thinks should change:</div>
-        <div id="filesList"></div>
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>✏️ Build: update a file from the plan</h2>
-      <div class="small">
-        The planner suggests files above. Click "Use this file" to populate the fields below, then "Update file". When satisfied, click "Commit to Git".
-        <span class="kbd">Ctrl+Enter</span> to update the file.
-      </div>
-      <label for="filePath">File path</label>
-      <input type="text" id="filePath" placeholder="e.g. src/components/ClientForm.tsx" title="Enter the file path to update" />
-
-      <label for="subtask">Subtask for this file</label>
-      <textarea id="subtask" placeholder="Short, focused change description for this file. The planner can generate this for you." title="Describe the specific change for this file"></textarea>
-
-      <button id="editBtn" class="btn-primary" title="Generate the updated file content">Update file</button>
-      <button id="commitBtn" title="Commit the updated content to GitHub">Commit to Git</button>
-      <div id="editCost" class="small"></div>
-
-      <h3>Updated file content</h3>
-      <textarea id="updatedContent" placeholder="Updated file content will appear here. You can review it before committing to GitHub." title="Review this and commit to your repo when ready"></textarea>
-    </div>
-
-    <div class="section">
-      <h2>🐛 Debug console errors</h2>
-      <div class="small">
-        Paste console output or stack traces here and select a project if relevant.
-        The assistant will use repo context when possible.
-        <span class="kbd">Ctrl+Enter</span> to submit.
-      </div>
-      <label for="errorText">Error output</label>
-      <textarea id="errorText" placeholder="Paste console errors, stack traces, or log snippets here." title="Paste error messages here"></textarea>
-      <button id="debugBtn" class="btn-primary" title="Get an explanation and suggested fixes">Explain and suggest fixes</button>
-      <div id="debugCost" class="small"></div>
-
-      <h3>Debug explanation</h3>
-      <pre id="debugOutput" class="empty-state"><span class="empty-state-icon">🔍</span><br>Paste an error above and click Explain to get help</pre>
-    </div>
-  </div>
-
-  <div id="savedTab" class="tab-content">
-    <div class="section">
-      <h2>💾 Saved ideas</h2>
-      <div class="small">
-        These are conversations you have run. Filter by project and starred status.
-      </div>
-      <div class="row">
-        <button id="refreshIdeasBtn" title="Reload saved ideas">Refresh ideas</button>
-        <div class="small">
-          <label><input type="checkbox" id="ideasStarredOnly" /> Show starred only</label>
+      <div class="conversations" id="conversations"></div>
+      <div class="sidebar-footer"><a href="/admin">⚙️ Admin Panel</a></div>
+    </aside>
+    <main class="main">
+      <header class="chat-header">
+        <button class="menu-btn" id="menuBtn">☰</button>
+        <span class="chat-title" id="chatTitle">New conversation</span>
+        <span class="model-indicator" id="modelIndicator"><span class="dot"></span>Ready</span>
+      </header>
+      <div class="messages" id="messages">
+        <div class="messages-inner" id="messagesInner">
+          <div class="empty-state" id="emptyState">
+            <h2>What would you like to build?</h2>
+            <p>Start a new project from scratch, or work on an existing one.</p>
+            <div class="empty-actions">
+              <button class="primary" id="emptyNewProject">🚀 Start New Project</button>
+              <button class="secondary" id="emptySelectProject">📂 Open Existing</button>
+            </div>
+            <p style="font-size:13px;color:var(--text3)">Or ask me anything:</p>
+            <div class="suggestions">
+              <button class="suggestion" data-text="Help me refactor this code">Refactor code</button>
+              <button class="suggestion" data-text="Debug this error">Debug error</button>
+              <button class="suggestion" data-text="Review my code">Code review</button>
+            </div>
+          </div>
         </div>
-        <span class="small" id="ideasListHint"></span>
       </div>
-      <div id="ideasList" class="file-list" style="max-height: 260px; overflow-y: auto;"></div>
-    </div>
-
-    <div class="section">
-      <h2>📁 Saved plans / tasks</h2>
-      <div class="small">
-        These are plans you have run. Filter by project and starred status.
-      </div>
-      <div class="row">
-        <button id="refreshTasksBtn" title="Reload saved plans">Refresh plans</button>
-        <div class="small">
-          <label><input type="checkbox" id="tasksStarredOnly" /> Show starred only</label>
+      <div class="input-area">
+        <div class="input-inner">
+          <div class="mode-indicator" id="modeIndicator" style="display:none">
+            <span>Mode:</span>
+            <span class="mode-badge planning" id="modeBadge">Planning</span>
+          </div>
+          <div class="model-toggle" id="modelToggle">
+            <button class="active" data-mode="auto">🔀 Auto</button>
+            <button data-mode="fast">⚡ Fast</button>
+            <button data-mode="full">🔥 Full</button>
+          </div>
+          <div class="route-preview" id="routePreview">Auto mode: Type to see which model</div>
+          <div class="file-chips" id="fileChips"></div>
+          <div class="input-box">
+            <textarea id="messageInput" placeholder="Describe what you want to build..." rows="1"></textarea>
+            <div class="input-actions">
+              <button class="attach" id="attachBtn">📎</button>
+              <button id="sendBtn">Send</button>
+            </div>
+          </div>
+          <div class="input-hint"><span>Ctrl+Enter to send</span><span class="cost-display" id="costDisplay"></span></div>
         </div>
-        <span class="small" id="tasksListHint"></span>
       </div>
-      <div id="tasksList" class="file-list" style="max-height: 260px; overflow-y: auto;"></div>
+    </main>
+  </div>
+  <div class="modal" id="fileModal">
+    <div class="modal-content">
+      <div class="modal-header"><h3>📁 Add files</h3><button class="modal-close" id="closeFileModal">×</button></div>
+      <div class="modal-body"><input type="text" class="file-search" id="fileSearch" placeholder="Search..."><div class="file-tree" id="fileTree"></div></div>
+      <div class="modal-footer"><button class="btn-secondary" id="cancelFiles">Cancel</button><button class="btn-primary" id="confirmFiles">Add</button></div>
     </div>
   </div>
+<script>
+marked.setOptions({highlight:(c,l)=>l&&hljs.getLanguage(l)?hljs.highlight(c,{language:l}).value:hljs.highlightAuto(c).value,breaks:true,gfm:true});
+const state={conversationId:null,conversations:[],loadedFiles:[],repoFiles:[],selectedFiles:new Set(),config:null,mode:'auto',chatMode:'building',totalCost:0,streaming:false};
+const $=id=>document.getElementById(id);
+function showToast(m,t='success'){const e=$('toast');e.textContent=m;e.className=`toast ${t}`;e.style.display='block';setTimeout(()=>e.style.display='none',4000)}
+function escapeHtml(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
 
-  <script>
-    function showToast(message, type = "info") {
-      const container = document.getElementById("toastContainer");
-      const toast = document.createElement("div");
-      toast.className = "toast toast-" + type;
-      toast.textContent = message;
-      container.appendChild(toast);
-      setTimeout(() => { toast.remove(); }, 4000);
-    }
+// Sidebar toggle
+function openSidebar(){$('sidebar').classList.add('open');$('sidebarOverlay').classList.add('open')}
+function closeSidebar(){$('sidebar').classList.remove('open');$('sidebarOverlay').classList.remove('open')}
+$('menuBtn').onclick=openSidebar;
+$('closeSidebar').onclick=closeSidebar;
+$('sidebarOverlay').onclick=closeSidebar;
 
-    function setLoading(button, isLoading, originalText) {
-      if (isLoading) {
-        button.disabled = true;
-        button.innerHTML = '<span class="spinner"></span> Working...';
-      } else {
-        button.disabled = false;
-        button.textContent = originalText;
-      }
-    }
+async function loadConfig(){state.config=await(await fetch('/api/config')).json()}
+async function loadProjects(){try{const r=await(await fetch('/api/projects')).json();$('projectSelect').innerHTML='<option value="">No project</option>'+r.map(x=>`<option value="${x.fullName}">${x.fullName}</option>`).join('')}catch(e){}}
+async function loadConversations(){state.conversations=await(await fetch('/api/conversations')).json();renderConversations()}
 
-    function renderConversationFromMessages(messages) {
-      if (!Array.isArray(messages) || messages.length === 0) return "";
-      return messages
-        .map(m => (m.role === "user" ? "You: " : "AI: ") + (m.text || ""))
-        .join("\n\n");
-    }
+function renderConversations(){
+  $('conversations').innerHTML=state.conversations.length?state.conversations.map(c=>`<div class="conv-item${c.id===state.conversationId?' active':''}" data-id="${c.id}"><span>${c.type==='planning'?'🚀':'💬'}</span><span class="title">${escapeHtml(c.title)}</span>${c.type==='planning'?'<span class="type-badge planning">Plan</span>':''}</div>`).join(''):'<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">No chats yet</div>';
+  $('conversations').querySelectorAll('.conv-item').forEach(el=>el.onclick=()=>{loadConversation(el.dataset.id);closeSidebar()});
+}
 
-    function renderConversationFromIdea(item) {
-      if (Array.isArray(item.messages) && item.messages.length) {
-        return renderConversationFromMessages(item.messages);
-      }
-      const parts = [];
-      if (item.ideaText) parts.push("You: " + item.ideaText);
-      if (item.brainstorming) parts.push("AI: " + item.brainstorming);
-      return parts.join("\n\n");
-    }
+async function loadConversation(id){
+  const c=state.conversations.find(x=>x.id===id);if(!c)return;
+  state.conversationId=id;
+  state.chatMode=c.type||'building';
+  updateModeIndicator();
+  $('chatTitle').textContent=c.title;
+  if(c.repoFullName){$('projectSelect').value=c.repoFullName;await loadRepoFiles()}
+  renderMessages(c.messages);renderConversations();
+}
 
-    const projectSelect = document.getElementById("projectSelect");
-    const refreshProjectsBtn = document.getElementById("refreshProjectsBtn");
-    const modeSelect = document.getElementById("modeSelect");
-    const modeHint = document.getElementById("modeHint");
+function updateModeIndicator(){
+  if(state.chatMode==='planning'){
+    $('modeIndicator').style.display='flex';
+    $('modeBadge').textContent='Planning';
+    $('modeBadge').className='mode-badge planning';
+    $('messageInput').placeholder='Describe what you want to build...';
+  }else{
+    $('modeIndicator').style.display='none';
+    $('messageInput').placeholder='Ask me anything...';
+  }
+}
 
-    const tabWork = document.getElementById("tabWork");
-    const tabSaved = document.getElementById("tabSaved");
-    const workTab = document.getElementById("workTab");
-    const savedTab = document.getElementById("savedTab");
+function renderMessages(msgs){
+  if(!msgs?.length){$('emptyState').style.display='block';Array.from($('messagesInner').children).forEach(c=>{if(c!==$('emptyState'))c.remove()});return}
+  $('emptyState').style.display='none';
+  Array.from($('messagesInner').children).forEach(c=>{if(c!==$('emptyState'))c.remove()});
+  msgs.forEach(m=>appendMessage(m.role,m.content,m.model,false));
+  $('messages').scrollTop=$('messages').scrollHeight;
+}
 
-    const ideaTextInput = document.getElementById("ideaText");
-    const ideasBtn = document.getElementById("ideasBtn");
-    const ideasOutput = document.getElementById("ideasOutput");
-    const ideasCost = document.getElementById("ideasCost");
-    const ideaFollowupInput = document.getElementById("ideaFollowup");
-    const ideasFollowupBtn = document.getElementById("ideasFollowupBtn");
-    const ideasFollowupHint = document.getElementById("ideasFollowupHint");
-    const generatePlanBtnTop = document.getElementById("generatePlanBtnTop");
-    const starCurrentIdeaBtn = document.getElementById("starCurrentIdeaBtn");
-    const starCurrentIdeaStatus = document.getElementById("starCurrentIdeaStatus");
-    let lastIdeaId = null;
+function appendMessage(role,content,model='',animate=true){
+  $('emptyState').style.display='none';
+  const msg=document.createElement('div');msg.className=`message ${role}`;if(!animate)msg.style.animation='none';
+  const time=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  msg.innerHTML=`<div class="msg-header"><div class="msg-avatar">${role==='user'?'Y':'AI'}</div><span class="msg-author">${role==='user'?'You':'Assistant'}</span><span class="msg-meta">${time}${model?' · '+model:''}</span></div><div class="msg-content"></div>`;
+  const cel=msg.querySelector('.msg-content');
+  if(role==='assistant'){cel.innerHTML=renderMarkdown(content)}else{cel.innerHTML=`<p>${escapeHtml(content)}</p>`}
+  $('messagesInner').appendChild(msg);return msg;
+}
 
-    const planBtn = document.getElementById("planBtn");
-    const planSummary = document.getElementById("planSummary");
-    const planCost = document.getElementById("planCost");
-    const filesContainer = document.getElementById("filesContainer");
-    const filesList = document.getElementById("filesList");
-    const starCurrentTaskBtn = document.getElementById("starCurrentTaskBtn");
-    const starCurrentTaskStatus = document.getElementById("starCurrentTaskStatus");
-    let lastTaskId = null;
+function detectFilePath(code,lang){
+  const lines=code.split('\n').slice(0,5);
+  for(const line of lines){const m=line.match(/(?:\/\/|#|\/\*|\*|<!--)\s*(?:file:?\s*)?([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+)/i);if(m)return m[1]}
+  const p={'javascript':'script.js','js':'script.js','typescript':'script.ts','ts':'script.ts','jsx':'component.jsx','tsx':'component.tsx','python':'script.py','py':'script.py','html':'index.html','css':'styles.css','json':'data.json'};
+  return p[lang]||'file.txt';
+}
 
-    const filePathInput = document.getElementById("filePath");
-    const subtaskInput = document.getElementById("subtask");
-    const editBtn = document.getElementById("editBtn");
-    const commitBtn = document.getElementById("commitBtn");
-    const updatedContent = document.getElementById("updatedContent");
-    const editCost = document.getElementById("editCost");
+function renderMarkdown(c){
+  if(!c)return'';
+  let h=marked.parse(c);
+  h=h.replace(/<pre><code class="language-(\w+)">([\s\S]*?)<\/code><\/pre>/g,(match,lang,code)=>{
+    const decoded=code.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"');
+    const fp=detectFilePath(decoded,lang);
+    const uid='code-'+Math.random().toString(36).substr(2,9);
+    return `<div class="code-header"><span class="code-lang">${fp}</span><div class="code-actions"><button onclick="copyCode('${uid}')">Copy</button><button class="apply-btn" onclick="applyToGitHub('${uid}','${fp}')">Apply</button></div></div><pre><code id="${uid}" class="language-${lang} hljs">${code}</code></pre>`;
+  });
+  return h;
+}
 
-    const errorTextInput = document.getElementById("errorText");
-    const debugBtn = document.getElementById("debugBtn");
-    const debugOutput = document.getElementById("debugOutput");
-    const debugCost = document.getElementById("debugCost");
+window.copyCode=id=>{const el=document.getElementById(id);if(el){navigator.clipboard.writeText(el.textContent);showToast('Copied!')}};
 
-    const refreshIdeasBtn = document.getElementById("refreshIdeasBtn");
-    const ideasList = document.getElementById("ideasList");
-    const ideasListHint = document.getElementById("ideasListHint");
-    const ideasStarredOnlyCheckbox = document.getElementById("ideasStarredOnly");
+window.applyToGitHub=async(codeId,suggestedPath)=>{
+  const repo=$('projectSelect').value;
+  if(!repo){showToast('Select a project first','error');return}
+  const codeEl=document.getElementById(codeId);if(!codeEl){showToast('Code not found','error');return}
+  const code=codeEl.textContent;
+  const filePath=prompt('File path to save:',suggestedPath);if(!filePath)return;
+  const btn=codeEl.closest('.msg-content').querySelector(`button[onclick*="${codeId}"].apply-btn`);
+  if(btn){btn.disabled=true;btn.textContent='...';}
+  try{
+    const res=await fetch('/api/apply-change',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({repoFullName:repo,filePath,newContent:code,commitMessage:`Update ${filePath} via AI Code Helper`})});
+    const data=await res.json();if(data.error)throw new Error(data.error);
+    if(btn){btn.textContent='✓ Done';btn.classList.add('applied')}
+    showToast(`Committed to ${repo}!`);
+  }catch(e){if(btn){btn.disabled=false;btn.textContent='Apply'}showToast('Failed: '+e.message,'error')}
+};
 
-    const refreshTasksBtn = document.getElementById("refreshTasksBtn");
-    const tasksList = document.getElementById("tasksList");
-    const tasksListHint = document.getElementById("tasksListHint");
-    const tasksStarredOnlyCheckbox = document.getElementById("tasksStarredOnly");
+$('modelToggle').querySelectorAll('button').forEach(b=>{b.onclick=()=>{$('modelToggle').querySelectorAll('button').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.mode=b.dataset.mode;updateRoutePreview()}});
 
-    function updateModeHint() {
-      const mode = modeSelect.value;
-      if (mode === "deep") {
-        modeHint.textContent = "GPT-5.2 Thinking - Best for complex tasks, coding, and planning. Higher quality.";
-      } else {
-        modeHint.textContent = "GPT-5.2 Instant - Fast responses for routine queries and simple tasks.";
-      }
-    }
+async function updateRoutePreview(){
+  const m=$('messageInput').value;
+  if(state.mode!=='auto'){const x=state.config?.models?.[state.mode];$('routePreview').textContent=x?`Using: ${x.displayName}`:'';return}
+  if(!m.trim()){$('routePreview').textContent='Auto mode: Type to see which model';return}
+  try{const r=await(await fetch('/api/preview-route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m,hasFiles:state.loadedFiles.length>0})})).json();$('routePreview').textContent=`Auto → ${r.displayName}: ${r.reason}`}catch(e){$('routePreview').textContent='Auto mode'}
+}
 
-    updateModeHint();
-    modeSelect.addEventListener("change", updateModeHint);
+let pt;$('messageInput').addEventListener('input',()=>{$('messageInput').style.height='auto';$('messageInput').style.height=Math.min($('messageInput').scrollHeight,150)+'px';clearTimeout(pt);pt=setTimeout(updateRoutePreview,300)});
 
-    function activateTab(tabName) {
-      if (tabName === "work") {
-        tabWork.classList.add("active");
-        tabSaved.classList.remove("active");
-        workTab.classList.add("active");
-        savedTab.classList.remove("active");
-      } else {
-        tabSaved.classList.add("active");
-        tabWork.classList.remove("active");
-        savedTab.classList.add("active");
-        workTab.classList.remove("active");
-      }
-    }
+function startNewProject(){
+  state.conversationId=null;
+  state.loadedFiles=[];
+  state.chatMode='planning';
+  updateModeIndicator();
+  $('chatTitle').textContent='New Project';
+  $('projectSelect').value='';
+  renderMessages([]);
+  renderFileChips();
+  renderConversations();
+  $('messageInput').focus();
+  closeSidebar();
+}
 
-    tabWork.addEventListener("click", () => activateTab("work"));
-    tabSaved.addEventListener("click", () => activateTab("saved"));
+function startNewChat(){
+  state.conversationId=null;
+  state.loadedFiles=[];
+  state.chatMode='building';
+  updateModeIndicator();
+  $('chatTitle').textContent='New conversation';
+  renderMessages([]);
+  renderFileChips();
+  renderConversations();
+  $('messageInput').focus();
+  closeSidebar();
+}
 
-    async function loadProjects() {
-      projectSelect.innerHTML = "<option>Loading...</option>";
-      try {
-        const res = await fetch("/api/projects?pinned=0");
-        const data = await res.json();
-        projectSelect.innerHTML = "";
+$('newProjectBtn').onclick=startNewProject;
+$('newChatBtn').onclick=startNewChat;
+$('emptyNewProject').onclick=startNewProject;
+$('emptySelectProject').onclick=()=>{openSidebar();$('projectSelect').focus()};
 
-        const noneOpt = document.createElement("option");
-        noneOpt.value = "";
-        noneOpt.textContent = "None (new idea)";
-        projectSelect.appendChild(noneOpt);
+async function loadRepoFiles(){const r=$('projectSelect').value;if(!r){state.repoFiles=[];return}try{const[o,n]=r.split('/');const d=await(await fetch(`/api/projects/${o}/${n}/files`)).json();state.repoFiles=d.files||[]}catch(e){state.repoFiles=[]}}
+$('projectSelect').onchange=async()=>{await loadRepoFiles();if($('projectSelect').value&&state.chatMode==='planning'){state.chatMode='building';updateModeIndicator()}};
 
-        if (Array.isArray(data) && data.length > 0) {
-          for (const repo of data) {
-            const opt = document.createElement("option");
-            opt.value = repo.fullName;
-            opt.textContent = repo.fullName;
-            projectSelect.appendChild(opt);
+$('attachBtn').onclick=()=>{if(!$('projectSelect').value){showToast('Select project first','error');return}state.selectedFiles=new Set(state.loadedFiles);renderFileTree();$('fileModal').classList.add('active')};
+
+function renderFileTree(f=''){
+  const fl=state.repoFiles.filter(x=>x.toLowerCase().includes(f.toLowerCase()));
+  $('fileTree').innerHTML=fl.slice(0,100).map(x=>`<div class="file-item${state.selectedFiles.has(x)?' selected':''}" data-path="${x}">📄 ${x}</div>`).join('')+(fl.length>100?`<div style="padding:10px;color:var(--text3)">...${fl.length-100} more</div>`:'');
+  $('fileTree').querySelectorAll('.file-item').forEach(e=>e.onclick=()=>{const p=e.dataset.path;if(state.selectedFiles.has(p)){state.selectedFiles.delete(p);e.classList.remove('selected')}else{state.selectedFiles.add(p);e.classList.add('selected')}});
+}
+
+$('fileSearch').oninput=e=>renderFileTree(e.target.value);
+$('closeFileModal').onclick=$('cancelFiles').onclick=()=>$('fileModal').classList.remove('active');
+$('confirmFiles').onclick=()=>{state.loadedFiles=Array.from(state.selectedFiles);renderFileChips();$('fileModal').classList.remove('active')};
+$('fileModal').onclick=e=>{if(e.target===$('fileModal'))$('fileModal').classList.remove('active')};
+
+function renderFileChips(){$('fileChips').innerHTML=state.loadedFiles.map(f=>`<div class="file-chip"><span>📄 ${f.split('/').pop()}</span><button onclick="removeFile('${f}')">×</button></div>`).join('')}
+window.removeFile=p=>{state.loadedFiles=state.loadedFiles.filter(f=>f!==p);renderFileChips()};
+
+async function sendMessage(){
+  const m=$('messageInput').value.trim();if(!m||state.streaming)return;
+  state.streaming=true;$('sendBtn').disabled=true;$('sendBtn').textContent='...';
+  appendMessage('user',m);$('messageInput').value='';$('messageInput').style.height='auto';$('messages').scrollTop=$('messages').scrollHeight;
+  const aMsg=appendMessage('assistant','');const cel=aMsg.querySelector('.msg-content');cel.innerHTML='<span class="streaming-dot"></span> Thinking...';
+  try{
+    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversationId:state.conversationId,message:m,repoFullName:$('projectSelect').value,loadedFiles:state.loadedFiles,modelOverride:state.mode,mode:state.chatMode})});
+    const reader=res.body.getReader();const dec=new TextDecoder();let full='';
+    while(true){const{done,value}=await reader.read();if(done)break;
+      for(const line of dec.decode(value).split('\n')){if(!line.startsWith('data: '))continue;
+        try{const d=JSON.parse(line.slice(6));
+          if(d.type==='start'){state.conversationId=d.conversationId;$('modelIndicator').innerHTML=`<span class="dot"></span>${d.model}`}
+          else if(d.type==='text'){full+=d.text;cel.innerHTML=renderMarkdown(full);$('messages').scrollTop=$('messages').scrollHeight}
+          else if(d.type==='done'){
+            if(d.cost){state.totalCost+=d.cost;$('costDisplay').textContent=`Session: $${state.totalCost.toFixed(4)}`}
+            aMsg.querySelector('.msg-meta').textContent+=` · ${d.model}`;
+            if(d.projectCreated){
+              showToast(`Project created: ${d.projectCreated.repoFullName}`);
+              await loadProjects();
+              $('projectSelect').value=d.projectCreated.repoFullName;
+              await loadRepoFiles();
+              state.chatMode='building';
+              updateModeIndicator();
+            }
+            loadConversations();
           }
-        }
-        loadSavedIdeas();
-        loadSavedTasks();
-      } catch (err) {
-        console.error(err);
-        projectSelect.innerHTML = "<option>Error loading projects</option>";
-        showToast("Failed to load projects", "error");
-      }
+          else if(d.type==='error'){cel.innerHTML=`<p style="color:var(--red)">Error: ${d.error}</p>`}
+        }catch(e){}}
     }
-
-    refreshProjectsBtn.addEventListener("click", () => { loadProjects(); });
-
-    projectSelect.addEventListener("change", () => {
-      loadSavedIdeas();
-      loadSavedTasks();
-    });
-
-    async function handleBrainstorm() {
-      const repoFullName = projectSelect.value || "";
-      const ideaText = ideaTextInput.value.trim();
-      const mode = modeSelect.value === "deep" ? "deep" : "standard";
-
-      if (!ideaText) {
-        showToast("Enter a message first", "error");
-        return;
-      }
-
-      setLoading(ideasBtn, true, "Ask in Plan");
-      ideasOutput.textContent = "";
-      ideasOutput.classList.remove("empty-state");
-      ideasCost.textContent = "";
-      ideasFollowupHint.textContent = "";
-      starCurrentIdeaStatus.textContent = "";
-      lastIdeaId = null;
-
-      try {
-        const res = await fetch("/api/ideas", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ repoFullName, ideaText, mode })
-        });
-        const data = await res.json();
-        if (data.error) {
-          ideasOutput.textContent = "Error: " + data.error + "\n" + (data.details || "");
-          showToast("Plan conversation failed", "error");
-          return;
-        }
-
-        const messages = data.messages || [
-          { role: "user", text: ideaText },
-          { role: "assistant", text: data.brainstorming || "" }
-        ];
-        const convoText = data.conversationText || renderConversationFromMessages(messages);
-
-        ideasOutput.textContent = convoText || "(no conversation text)";
-        lastIdeaId = data.ideaId || null;
-        ideaFollowupInput.value = "";
-        showToast("Conversation updated!", "success");
-
-        if (data.estimatedCost) {
-          const formatted = data.estimatedCost.toFixed(4);
-          ideasCost.innerHTML = `<span class="${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
-        }
-
-        loadSavedIdeas();
-      } catch (err) {
-        console.error(err);
-        ideasOutput.textContent = "Error running conversation.";
-        showToast("Network error", "error");
-      } finally {
-        setLoading(ideasBtn, false, "Ask in Plan");
-      }
-    }
-
-    ideasBtn.addEventListener("click", handleBrainstorm);
-
-    async function handleIdeaFollowup() {
-      const followupText = ideaFollowupInput.value.trim();
-      if (!lastIdeaId) {
-        showToast("Start a Plan conversation first, then ask a follow up.", "info");
-        return;
-      }
-      if (!followupText) {
-        showToast("Enter a follow up question first", "error");
-        return;
-      }
-
-      const mode = modeSelect.value === "deep" ? "deep" : "standard";
-
-      setLoading(ideasFollowupBtn, true, "Ask follow up");
-      ideasFollowupHint.textContent = "";
-      ideasOutput.classList.remove("empty-state");
-
-      try {
-        const res = await fetch("/api/ideas/" + encodeURIComponent(lastIdeaId) + "/reply", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ followupText, mode })
-        });
-        const data = await res.json();
-        if (data.error) {
-          ideasOutput.textContent = "Error: " + data.error + "\n" + (data.details || "");
-          showToast("Follow up failed", "error");
-          return;
-        }
-
-        const messages = data.messages || [];
-        const convoText = data.conversationText || renderConversationFromMessages(messages);
-        ideasOutput.textContent = convoText || "(no conversation text)";
-        lastIdeaId = data.ideaId || lastIdeaId;
-        ideaFollowupInput.value = "";
-        showToast("Follow up added", "success");
-
-        if (data.estimatedCost) {
-          const formatted = data.estimatedCost.toFixed(4);
-          ideasCost.innerHTML = `<span class="${data.costWarning ? "cost-warning" : "cost-normal"}">Last call estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
-        }
-
-        loadSavedIdeas();
-      } catch (err) {
-        console.error(err);
-        ideasOutput.textContent = "Error running follow up.";
-        showToast("Network error", "error");
-      } finally {
-        setLoading(ideasFollowupBtn, false, "Ask follow up");
-      }
-    }
-
-    ideasFollowupBtn.addEventListener("click", handleIdeaFollowup);
-
-    if (generatePlanBtnTop) {
-      generatePlanBtnTop.addEventListener("click", () => {
-        handlePlan();
-        window.scrollTo({ top: planSummary.offsetTop - 40, behavior: "smooth" });
-      });
-    }
-
-    starCurrentIdeaBtn.addEventListener("click", async () => {
-      if (!lastIdeaId) {
-        showToast("No idea to star yet. Run a Plan conversation first.", "info");
-        return;
-      }
-      try {
-        const res = await fetch("/api/ideas/" + encodeURIComponent(lastIdeaId) + "/star", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ starred: true })
-        });
-        const data = await res.json();
-        if (data.error) {
-          showToast("Could not star idea: " + data.error, "error");
-          return;
-        }
-        starCurrentIdeaStatus.textContent = "This idea is starred.";
-        showToast("Idea starred!", "success");
-        loadSavedIdeas();
-      } catch (err) {
-        console.error(err);
-        showToast("Error starring idea", "error");
-      }
-    });
-
-    async function handlePlan() {
-      const repoFullName = projectSelect.value;
-      const mode = modeSelect.value === "deep" ? "deep" : "standard";
-
-      if (!repoFullName) {
-        showToast("Select a project first to generate a concrete plan.", "error");
-        return;
-      }
-      if (!lastIdeaId) {
-        showToast("Start a Plan conversation first, then generate a plan.", "error");
-        return;
-      }
-
-      setLoading(planBtn, true, "Generate plan");
-      planSummary.textContent = "";
-      planSummary.classList.remove("empty-state");
-      planCost.textContent = "";
-      filesContainer.style.display = "none";
-      filesList.innerHTML = "";
-      starCurrentTaskStatus.textContent = "";
-      lastTaskId = null;
-
-      try {
-        const res = await fetch("/api/plan/from-idea", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ideaId: lastIdeaId, repoFullName, mode })
-        });
-        const data = await res.json();
-        if (data.error) {
-          planSummary.textContent = "Error: " + data.error + "\n" + (data.details || "");
-          showToast("Planning failed", "error");
-          return;
-        }
-
-        const { plan, estimatedCost, costWarning, modelUsed, taskId } = data;
-        lastTaskId = taskId || null;
-        showToast("Plan generated!", "success");
-
-        if (estimatedCost) {
-          const formatted = estimatedCost.toFixed(4);
-          planCost.innerHTML = `<span class="${costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${modelUsed}${costWarning ? " (higher than usual)" : ""}</span>`;
-        }
-
-        let summaryText = "";
-        if (plan.planText) {
-          summaryText = plan.planText;
-        } else {
-          summaryText = JSON.stringify(plan, null, 2);
-        }
-        planSummary.textContent = summaryText || "(no plan text)";
-
-        if (Array.isArray(plan.files) && plan.files.length) {
-          filesContainer.style.display = "block";
-          filesList.innerHTML = "";
-          plan.files.forEach(file => {
-            const item = document.createElement("div");
-            item.className = "file-item";
-
-            const pathDiv = document.createElement("div");
-            pathDiv.className = "file-path";
-            pathDiv.textContent = file.path;
-
-            const reason = document.createElement("div");
-            reason.className = "file-reason";
-            reason.textContent = file.reason || file.changeSummary || "";
-
-            const actions = document.createElement("div");
-            actions.className = "file-actions";
-
-            const useBtn = document.createElement("button");
-            useBtn.textContent = "Use this file";
-            useBtn.title = "Populate the edit form with this file";
-            useBtn.addEventListener("click", () => {
-              filePathInput.value = file.path;
-              subtaskInput.value = file.subtaskPrompt || file.changeSummary || "";
-              updatedContent.value = "";
-              activateTab("work");
-              window.scrollTo({ top: filePathInput.offsetTop - 40, behavior: "smooth" });
-            });
-
-            actions.appendChild(useBtn);
-            item.appendChild(pathDiv);
-            item.appendChild(reason);
-            item.appendChild(actions);
-            filesList.appendChild(item);
-          });
-        } else {
-          filesContainer.style.display = "none";
-        }
-
-        loadSavedTasks();
-      } catch (err) {
-        console.error(err);
-        planSummary.textContent = "Error generating plan.";
-        showToast("Network error", "error");
-      } finally {
-        setLoading(planBtn, false, "Generate plan");
-      }
-    }
-
-    planBtn.addEventListener("click", handlePlan);
-
-    starCurrentTaskBtn.addEventListener("click", async () => {
-      if (!lastTaskId) {
-        showToast("No plan to star yet. Generate a plan first.", "info");
-        return;
-      }
-      try {
-        const res = await fetch("/api/tasks/" + encodeURIComponent(lastTaskId) + "/star", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ starred: true })
-        });
-        const data = await res.json();
-        if (data.error) {
-          showToast("Could not star plan: " + data.error, "error");
-          return;
-        }
-        starCurrentTaskStatus.textContent = "This plan is starred.";
-        showToast("Plan starred!", "success");
-        loadSavedTasks();
-      } catch (err) {
-        console.error(err);
-        showToast("Error starring plan", "error");
-      }
-    });
-
-    async function handleEdit() {
-      const repoFullName = projectSelect.value;
-      const filePath = filePathInput.value.trim();
-      const subtaskPrompt = subtaskInput.value.trim();
-      const mode = modeSelect.value === "deep" ? "deep" : "standard";
-
-      if (!repoFullName) {
-        showToast("Select a project first", "error");
-        return;
-      }
-      if (!filePath) {
-        showToast("Enter or select a file path", "error");
-        return;
-      }
-      if (!subtaskPrompt) {
-        showToast("Enter a focused subtask for this file", "error");
-        return;
-      }
-
-      setLoading(editBtn, true, "Update file");
-      updatedContent.value = "";
-      editCost.textContent = "";
-
-      try {
-        const res = await fetch("/api/edit-from-github", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ repoFullName, filePath, subtaskPrompt, mode })
-        });
-        const data = await res.json();
-        if (data.error) {
-          updatedContent.value = "// Error: " + data.error + "\n" + (data.details || "");
-          showToast("Update failed", "error");
-          return;
-        }
-        updatedContent.value = data.updatedContent || "";
-        showToast("File updated (preview only). Review and commit if you are satisfied.", "success");
-
-        if (data.estimatedCost) {
-          const formatted = data.estimatedCost.toFixed(4);
-          editCost.innerHTML = `<span class="${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
-        }
-      } catch (err) {
-        console.error(err);
-        updatedContent.value = "// Error updating file.";
-        showToast("Network error", "error");
-      } finally {
-        setLoading(editBtn, false, "Update file");
-      }
-    }
-
-    editBtn.addEventListener("click", handleEdit);
-
-    async function handleCommit() {
-      const repoFullName = projectSelect.value;
-      const filePath = filePathInput.value.trim();
-      const content = updatedContent.value;
-      const subtaskPrompt = subtaskInput.value.trim();
-
-      if (!repoFullName) {
-        showToast("Select a project first", "error");
-        return;
-      }
-      if (!filePath) {
-        showToast("Enter or select a file path first", "error");
-        return;
-      }
-      if (!content || !content.trim()) {
-        showToast("No updated content to commit. Run Update file first.", "error");
-        return;
-      }
-
-      const commitMessage = subtaskPrompt
-        ? ("AI update: " + subtaskPrompt).slice(0, 100)
-        : ("AI update to " + filePath).slice(0, 100);
-
-      setLoading(commitBtn, true, "Committing...");
-      try {
-        const res = await fetch("/api/commit-file", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ repoFullName, filePath, updatedContent: content, commitMessage })
-        });
-        const data = await res.json();
-        if (data.error) {
-          showToast("Commit failed: " + data.error, "error");
-          return;
-        }
-        showToast("Committed to GitHub (default branch). Check Replit sync and redeploy when ready.", "success");
-      } catch (err) {
-        console.error(err);
-        showToast("Network error during commit", "error");
-      } finally {
-        setLoading(commitBtn, false, "Commit to Git");
-      }
-    }
-
-    commitBtn.addEventListener("click", handleCommit);
-
-    async function handleDebug() {
-      const repoFullName = projectSelect.value;
-      const errorText = errorTextInput.value.trim();
-      const mode = modeSelect.value === "deep" ? "deep" : "standard";
-
-      if (!errorText) {
-        showToast("Paste some error output first", "error");
-        return;
-      }
-
-      setLoading(debugBtn, true, "Explain and suggest fixes");
-      debugOutput.textContent = "";
-      debugOutput.classList.remove("empty-state");
-      debugCost.textContent = "";
-
-      try {
-        const res = await fetch("/api/debug", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ repoFullName, errorText, mode })
-        });
-        const data = await res.json();
-        if (data.error) {
-          debugOutput.textContent = "Error: " + data.error + "\n" + (data.details || "");
-          showToast("Debug failed", "error");
-          return;
-        }
-        debugOutput.textContent = data.explanation || "(no explanation text)";
-        showToast("Debug complete!", "success");
-
-        if (data.estimatedCost) {
-          const formatted = data.estimatedCost.toFixed(4);
-          debugCost.innerHTML = `<span class="${data.costWarning ? "cost-warning" : "cost-normal"}">Estimated cost: $${formatted} using ${data.modelUsed}${data.costWarning ? " (higher than usual)" : ""}</span>`;
-        }
-      } catch (err) {
-        console.error(err);
-        debugOutput.textContent = "Error running debug.";
-        showToast("Network error", "error");
-      } finally {
-        setLoading(debugBtn, false, "Explain and suggest fixes");
-      }
-    }
-
-    debugBtn.addEventListener("click", handleDebug);
-
-    async function loadSavedIdeas() {
-      const repoFullName = projectSelect.value || "";
-      const starredOnly = ideasStarredOnlyCheckbox?.checked ? "1" : "0";
-      let url = "/api/ideas";
-      const params = [];
-      if (repoFullName) params.push("repoFullName=" + encodeURIComponent(repoFullName));
-      if (starredOnly === "1") params.push("starred=1");
-      if (params.length) url += "?" + params.join("&");
-
-      ideasList.innerHTML = "<div class='small'>Loading ideas...</div>";
-      ideasListHint.textContent = "";
-
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
-        if (!Array.isArray(data) || data.length === 0) {
-          ideasList.innerHTML = "<div class='empty-state'><span class='empty-state-icon'>💭</span><br>No saved ideas yet. Run a Plan conversation to get started.</div>";
-          ideasListHint.textContent = "";
-          return;
-        }
-
-        ideasList.innerHTML = "";
-        data.forEach(item => {
-          const div = document.createElement("div");
-          div.className = "file-item";
-
-          const top = document.createElement("div");
-          top.className = "file-path";
-          const date = new Date(item.createdAt);
-          const dateStr = isNaN(date.getTime()) ? item.createdAt : date.toLocaleString();
-          top.textContent = (item.starred ? "⭐ " : "") + dateStr;
-
-          const text = document.createElement("div");
-          text.className = "file-reason";
-          text.textContent = item.ideaText ? item.ideaText.slice(0, 120) + (item.ideaText.length > 120 ? "..." : "") : "";
-
-          const actions = document.createElement("div");
-          actions.className = "file-actions";
-
-          const viewBtn = document.createElement("button");
-          viewBtn.textContent = "View";
-          viewBtn.title = "View full conversation";
-          viewBtn.addEventListener("click", () => {
-            ideaTextInput.value = item.ideaText || "";
-            const convo = renderConversationFromIdea(item);
-            ideasOutput.textContent = convo || "(no output)";
-            ideasOutput.classList.remove("empty-state");
-            lastIdeaId = item.id;
-            ideaFollowupInput.value = "";
-            activateTab("work");
-            window.scrollTo({ top: ideasOutput.offsetTop - 40, behavior: "smooth" });
-          });
-
-          const starBtn = document.createElement("button");
-          starBtn.textContent = item.starred ? "Unstar" : "Star";
-          starBtn.title = item.starred ? "Remove star" : "Star this idea";
-          starBtn.addEventListener("click", async () => {
-            try {
-              const res = await fetch("/api/ideas/" + encodeURIComponent(item.id) + "/star", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ starred: !item.starred })
-              });
-              const d = await res.json();
-              if (d.error) {
-                showToast("Could not update star: " + d.error, "error");
-                return;
-              }
-              showToast(item.starred ? "Star removed" : "Idea starred!", "success");
-              loadSavedIdeas();
-            } catch (err) {
-              console.error(err);
-              showToast("Error updating star", "error");
-            }
-          });
-
-          actions.appendChild(viewBtn);
-          actions.appendChild(starBtn);
-
-          div.appendChild(top);
-          div.appendChild(text);
-          div.appendChild(actions);
-          ideasList.appendChild(div);
-        });
-
-        ideasListHint.textContent = data.length + " idea(s)";
-      } catch (err) {
-        console.error(err);
-        ideasList.innerHTML = "<div class='small'>Error loading ideas.</div>";
-      }
-    }
-
-    async function loadSavedTasks() {
-      const repoFullName = projectSelect.value || "";
-      const starredOnly = tasksStarredOnlyCheckbox?.checked ? "1" : "0";
-      let url = "/api/tasks";
-      const params = [];
-      if (repoFullName) params.push("repoFullName=" + encodeURIComponent(repoFullName));
-      if (starredOnly === "1") params.push("starred=1");
-      if (params.length) url += "?" + params.join("&");
-
-      tasksList.innerHTML = "<div class='small'>Loading plans...</div>";
-      tasksListHint.textContent = "";
-
-      try {
-        const res = await fetch(url);
-        const data = await res.json();
-        if (!Array.isArray(data) || data.length === 0) {
-          tasksList.innerHTML = "<div class='empty-state'><span class='empty-state-icon'>📋</span><br>No saved plans yet. Generate a plan from a conversation to get started.</div>";
-          tasksListHint.textContent = "";
-          return;
-        }
-
-        tasksList.innerHTML = "";
-        data.forEach(item => {
-          const div = document.createElement("div");
-          div.className = "file-item";
-
-          const top = document.createElement("div");
-          top.className = "file-path";
-          const date = new Date(item.createdAt);
-          const dateStr = isNaN(date.getTime()) ? item.createdAt : date.toLocaleString();
-          top.textContent = (item.starred ? "⭐ " : "") + dateStr;
-
-          const text = document.createElement("div");
-          text.className = "file-reason";
-          text.textContent = item.task ? item.task.slice(0, 120) + (item.task.length > 120 ? "..." : "") : "";
-
-          const actions = document.createElement("div");
-          actions.className = "file-actions";
-
-          const viewBtn = document.createElement("button");
-          viewBtn.textContent = "View";
-          viewBtn.title = "View full plan";
-          viewBtn.addEventListener("click", () => {
-            planSummary.textContent = item.planText || JSON.stringify(item.plan, null, 2) || "(no plan)";
-            planSummary.classList.remove("empty-state");
-            lastTaskId = item.id;
-            activateTab("work");
-            window.scrollTo({ top: planSummary.offsetTop - 40, behavior: "smooth" });
-          });
-
-          const starBtn = document.createElement("button");
-          starBtn.textContent = item.starred ? "Unstar" : "Star";
-          starBtn.title = item.starred ? "Remove star" : "Star this plan";
-          starBtn.addEventListener("click", async () => {
-            try {
-              const res = await fetch("/api/tasks/" + encodeURIComponent(item.id) + "/star", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ starred: !item.starred })
-              });
-              const d = await res.json();
-              if (d.error) {
-                showToast("Could not update star: " + d.error, "error");
-                return;
-              }
-              showToast(item.starred ? "Star removed" : "Plan starred!", "success");
-              loadSavedTasks();
-            } catch (err) {
-              console.error(err);
-              showToast("Error updating star", "error");
-            }
-          });
-
-          actions.appendChild(viewBtn);
-          actions.appendChild(starBtn);
-
-          div.appendChild(top);
-          div.appendChild(text);
-          div.appendChild(actions);
-          tasksList.appendChild(div);
-        });
-
-        tasksListHint.textContent = data.length + " plan(s)";
-      } catch (err) {
-        console.error(err);
-        tasksList.innerHTML = "<div class='small'>Error loading plans.</div>";
-      }
-    }
-
-    if (refreshIdeasBtn) {
-      refreshIdeasBtn.addEventListener("click", () => { loadSavedIdeas(); });
-    }
-    if (ideasStarredOnlyCheckbox) {
-      ideasStarredOnlyCheckbox.addEventListener("change", () => { loadSavedIdeas(); });
-    }
-    if (refreshTasksBtn) {
-      refreshTasksBtn.addEventListener("click", () => { loadSavedTasks(); });
-    }
-    if (tasksStarredOnlyCheckbox) {
-      tasksStarredOnlyCheckbox.addEventListener("change", () => { loadSavedTasks(); });
-    }
-
-    document.addEventListener("keydown", (e) => {
-      if (e.ctrlKey && e.key === "Enter") {
-        const active = document.activeElement;
-        if (active === ideaTextInput) {
-          e.preventDefault();
-          handleBrainstorm();
-        } else if (active === ideaFollowupInput) {
-          e.preventDefault();
-          handleIdeaFollowup();
-        } else if (active === subtaskInput || active === filePathInput) {
-          e.preventDefault();
-          handleEdit();
-        } else if (active === errorTextInput) {
-          e.preventDefault();
-          handleDebug();
-        }
-      }
-    });
-
-    loadProjects();
-  </script>
+  }catch(e){cel.innerHTML=`<p style="color:var(--red)">Failed to send</p>`}
+  finally{state.streaming=false;$('sendBtn').disabled=false;$('sendBtn').textContent='Send'}
+}
+
+$('sendBtn').onclick=sendMessage;
+$('messageInput').onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();sendMessage()}};
+document.querySelectorAll('.suggestion').forEach(s=>s.onclick=()=>{$('messageInput').value=s.dataset.text;$('messageInput').focus();updateRoutePreview()});
+
+loadConfig();loadProjects();loadConversations();
+</script>
 </body>
 </html>

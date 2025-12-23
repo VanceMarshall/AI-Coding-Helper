@@ -1,0 +1,121 @@
+{
+  "models": {
+    "fast": {
+      "id": "fast",
+      "provider": "google",
+      "model": "gemini-2.0-flash",
+      "displayName": "Gemini 2.0 Flash",
+      "description": "Fast responses for simple questions",
+      "inputCost": 0.10,
+      "outputCost": 0.40,
+      "maxOutputTokens": 8192,
+      "contextWindow": 1000000,
+      "enabled": true
+    },
+    "full": {
+      "id": "full",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-20250514",
+      "displayName": "Claude Sonnet 4",
+      "description": "Best coding model for complex tasks",
+      "inputCost": 3.00,
+      "outputCost": 15.00,
+      "maxOutputTokens": 64000,
+      "contextWindow": 200000,
+      "enabled": true
+    },
+    "fallback": {
+      "id": "fallback",
+      "provider": "openai",
+      "model": "gpt-4o",
+      "displayName": "GPT-4o",
+      "description": "Alternative for second opinions",
+      "inputCost": 2.50,
+      "outputCost": 10.00,
+      "maxOutputTokens": 16384,
+      "contextWindow": 128000,
+      "enabled": true
+    }
+  },
+  "routing": {
+    "default": "auto",
+    "fastPatterns": [
+      "^what is",
+      "^what's",
+      "^how do i",
+      "^how to",
+      "^explain",
+      "^define",
+      "^why does",
+      "^can you",
+      "^is there",
+      "^where is",
+      "^when should"
+    ],
+    "fullPatterns": [
+      "build",
+      "create",
+      "implement",
+      "refactor",
+      "architect",
+      "design",
+      "write a",
+      "develop",
+      "fix this",
+      "debug",
+      "optimize",
+      "review this code",
+      "help me with this error",
+      "update the",
+      "modify",
+      "change the",
+      "new project",
+      "start a project",
+      "new app"
+    ],
+    "thresholds": {
+      "shortMessageWords": 15,
+      "longMessageWords": 50,
+      "fileAttachmentTriggersFull": true
+    }
+  },
+  "providers": {
+    "openai": {
+      "name": "OpenAI",
+      "baseUrl": "https://api.openai.com/v1",
+      "envKey": "OPENAI_API_KEY"
+    },
+    "anthropic": {
+      "name": "Anthropic",
+      "baseUrl": "https://api.anthropic.com",
+      "envKey": "ANTHROPIC_API_KEY"
+    },
+    "google": {
+      "name": "Google",
+      "baseUrl": "https://generativelanguage.googleapis.com",
+      "envKey": "GOOGLE_API_KEY"
+    }
+  },
+  "templates": {
+    "nextjs": {
+      "name": "Next.js",
+      "description": "React framework with API routes, good for full-stack web apps",
+      "useCase": ["web app", "dashboard", "saas", "marketing site"]
+    },
+    "node-api": {
+      "name": "Node.js API",
+      "description": "Express backend, good for APIs and services",
+      "useCase": ["api", "backend", "microservice", "webhook"]
+    },
+    "python-flask": {
+      "name": "Python Flask",
+      "description": "Python backend, good for ML/AI integrations",
+      "useCase": ["api", "ml", "data processing", "scripts"]
+    },
+    "static": {
+      "name": "Static Site",
+      "description": "HTML/CSS/JS, good for simple sites",
+      "useCase": ["landing page", "portfolio", "simple site"]
+    }
+  }
+}
