@@ -2,7 +2,8 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs/promises";
-import { initializeProviders, isProviderAvailable, streamCompletion, calculateCost } from "./providers/index.js";
+import crypto from "crypto";
+import { initializeProviders, isProviderAvailable, streamCompletion, calculateCost, reloadProviders } from "./providers/index.js";
 import { routeMessage, previewRoute } from "./providers/router.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,13 +12,18 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const providerStatus = initializeProviders();
+let providerStatus = initializeProviders();
 
 const CONFIG_PATH = path.join(__dirname, "config", "models.json");
+const SECRETS_PATH = path.join(__dirname, "config", "secrets.json");
 const DATA_DIR = path.join(__dirname, "data");
 const conversationsPath = path.join(DATA_DIR, "conversations.json");
 const projectsPath = path.join(DATA_DIR, "projects.json");
 const statsPath = path.join(DATA_DIR, "stats.json");
+
+// Session management for admin
+const adminSessions = new Map();
+const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
 async function loadConfig() {
   const text = await fs.readFile(CONFIG_PATH, "utf8");
@@ -27,6 +33,65 @@ async function loadConfig() {
 async function saveConfig(config) {
   await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), "utf8");
 }
+
+async function loadSecrets() {
+  try {
+    const text = await fs.readFile(SECRETS_PATH, "utf8");
+    return JSON.parse(text);
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      return { adminPassword: null, apiKeys: {} };
+    }
+    throw err;
+  }
+}
+
+async function saveSecrets(secrets) {
+  await fs.writeFile(SECRETS_PATH, JSON.stringify(secrets, null, 2), "utf8");
+}
+
+// Get API key - environment variable takes priority
+function getApiKey(provider) {
+  const envKeys = {
+    openai: process.env.OPENAI_API_KEY,
+    anthropic: process.env.ANTHROPIC_API_KEY,
+    google: process.env.GOOGLE_API_KEY,
+    github: process.env.GITHUB_TOKEN
+  };
+  return envKeys[provider] || null;
+}
+
+async function getApiKeyWithFallback(provider) {
+  // Environment variable takes priority
+  const envKey = getApiKey(provider);
+  if (envKey) return { key: envKey, source: "env" };
+  
+  // Fall back to secrets file
+  const secrets = await loadSecrets();
+  if (secrets.apiKeys?.[provider]) {
+    return { key: secrets.apiKeys[provider], source: "config" };
+  }
+  
+  return { key: null, source: null };
+}
+
+// Reload providers with current keys
+async function reloadProvidersWithSecrets() {
+  const secrets = await loadSecrets();
+  const keys = {
+    openai: process.env.OPENAI_API_KEY || secrets.apiKeys?.openai,
+    anthropic: process.env.ANTHROPIC_API_KEY || secrets.apiKeys?.anthropic,
+    google: process.env.GOOGLE_API_KEY || secrets.apiKeys?.google,
+    github: process.env.GITHUB_TOKEN || secrets.apiKeys?.github
+  };
+  providerStatus = reloadProviders(keys);
+  return providerStatus;
+}
+
+// Initialize with secrets on startup
+(async () => {
+  await reloadProvidersWithSecrets();
+})();
 
 async function ensureDataDir() {
   try { await fs.mkdir(DATA_DIR, { recursive: true }); } catch (err) { if (err.code !== "EEXIST") console.error(err); }
@@ -46,7 +111,45 @@ function createId() {
   return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
 }
 
+function generateSessionToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function maskKey(key) {
+  if (!key) return null;
+  if (key.length <= 8) return "••••••••";
+  return "••••••••••••" + key.slice(-4);
+}
+
+// Admin auth middleware
+async function requireAdminAuth(req, res, next) {
+  const secrets = await loadSecrets();
+  
+  // If no password is set, allow access (first-time setup)
+  if (!secrets.adminPassword) {
+    return next();
+  }
+  
+  const sessionToken = req.headers["x-admin-session"];
+  if (!sessionToken) {
+    return res.status(401).json({ error: "Authentication required", needsAuth: true });
+  }
+  
+  const session = adminSessions.get(sessionToken);
+  if (!session || session.expires < Date.now()) {
+    adminSessions.delete(sessionToken);
+    return res.status(401).json({ error: "Session expired", needsAuth: true });
+  }
+  
+  next();
+}
+
 // GitHub helpers
+async function getGitHubToken() {
+  const result = await getApiKeyWithFallback("github");
+  return result.key;
+}
+
 function parseRepoFullName(full) { const [owner, repo] = (full || "").split("/"); return { owner, repo }; }
 function encodeGitHubPath(filePath) { return (filePath || "").split("/").map(encodeURIComponent).join("/"); }
 
@@ -59,14 +162,14 @@ async function fetchGitHubJson(url, token) {
 }
 
 async function listRepos() {
-  const token = process.env.GITHUB_TOKEN;
+  const token = await getGitHubToken();
   if (!token) throw new Error("GITHUB_TOKEN is not set");
   const repos = await fetchGitHubJson("https://api.github.com/user/repos?per_page=100&sort=updated", token);
   return repos.map((r) => ({ fullName: r.full_name, defaultBranch: r.default_branch, private: r.private }));
 }
 
 async function listRepoFiles(repoFullName) {
-  const token = process.env.GITHUB_TOKEN;
+  const token = await getGitHubToken();
   if (!token) throw new Error("GITHUB_TOKEN is not set");
   const { owner, repo } = parseRepoFullName(repoFullName);
   const json = await fetchGitHubJson(`https://api.github.com/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`, token);
@@ -75,7 +178,7 @@ async function listRepoFiles(repoFullName) {
 }
 
 async function getFileFromGitHub(repoFullName, filePath) {
-  const token = process.env.GITHUB_TOKEN;
+  const token = await getGitHubToken();
   if (!token) throw new Error("GITHUB_TOKEN is not set");
   const { owner, repo } = parseRepoFullName(repoFullName);
   const json = await fetchGitHubJson(`https://api.github.com/repos/${owner}/${repo}/contents/${encodeGitHubPath(filePath)}`, token);
@@ -84,7 +187,7 @@ async function getFileFromGitHub(repoFullName, filePath) {
 }
 
 async function createGitHubRepo(name, description, isPrivate = true) {
-  const token = process.env.GITHUB_TOKEN;
+  const token = await getGitHubToken();
   if (!token) throw new Error("GITHUB_TOKEN is not set");
   const res = await fetch("https://api.github.com/user/repos", {
     method: "POST",
@@ -96,7 +199,7 @@ async function createGitHubRepo(name, description, isPrivate = true) {
 }
 
 async function createOrUpdateFile(repoFullName, filePath, content, message) {
-  const token = process.env.GITHUB_TOKEN;
+  const token = await getGitHubToken();
   if (!token) throw new Error("GITHUB_TOKEN is not set");
   const { owner, repo } = parseRepoFullName(repoFullName);
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeGitHubPath(filePath)}`;
@@ -233,7 +336,6 @@ async function updateStats(modelKey, inputTokens, outputTokens, cost, projectId 
   return stats;
 }
 
-// Update project cost
 async function updateProjectCost(projectId, cost) {
   const projects = await readJson(projectsPath, []);
   const idx = projects.findIndex(p => p.id === projectId);
@@ -251,15 +353,205 @@ app.use(express.static(path.join(__dirname, "public")));
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.get("/admin", (req, res) => res.sendFile(path.join(__dirname, "public", "admin.html")));
 
-// Config endpoints
+// Admin auth endpoints
+app.get("/api/admin/auth-status", async (req, res) => {
+  try {
+    const secrets = await loadSecrets();
+    const sessionToken = req.headers["x-admin-session"];
+    
+    let isAuthenticated = false;
+    if (!secrets.adminPassword) {
+      isAuthenticated = true; // No password set = first time setup
+    } else if (sessionToken) {
+      const session = adminSessions.get(sessionToken);
+      isAuthenticated = session && session.expires > Date.now();
+    }
+    
+    res.json({
+      needsPassword: !secrets.adminPassword,
+      isAuthenticated
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/setup-password", async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
+    
+    const secrets = await loadSecrets();
+    if (secrets.adminPassword) {
+      return res.status(400).json({ error: "Password already set. Use login instead." });
+    }
+    
+    secrets.adminPassword = crypto.createHash("sha256").update(password).digest("hex");
+    await saveSecrets(secrets);
+    
+    const sessionToken = generateSessionToken();
+    adminSessions.set(sessionToken, { expires: Date.now() + SESSION_DURATION });
+    
+    res.json({ ok: true, sessionToken });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/login", async (req, res) => {
+  try {
+    const { password } = req.body;
+    const secrets = await loadSecrets();
+    
+    if (!secrets.adminPassword) {
+      return res.status(400).json({ error: "No password set. Use setup instead." });
+    }
+    
+    const hash = crypto.createHash("sha256").update(password).digest("hex");
+    if (hash !== secrets.adminPassword) {
+      return res.status(401).json({ error: "Invalid password" });
+    }
+    
+    const sessionToken = generateSessionToken();
+    adminSessions.set(sessionToken, { expires: Date.now() + SESSION_DURATION });
+    
+    res.json({ ok: true, sessionToken });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/logout", (req, res) => {
+  const sessionToken = req.headers["x-admin-session"];
+  if (sessionToken) {
+    adminSessions.delete(sessionToken);
+  }
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/change-password", requireAdminAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: "New password must be at least 6 characters" });
+    }
+    
+    const secrets = await loadSecrets();
+    
+    // If password exists, verify current password
+    if (secrets.adminPassword) {
+      const currentHash = crypto.createHash("sha256").update(currentPassword || "").digest("hex");
+      if (currentHash !== secrets.adminPassword) {
+        return res.status(401).json({ error: "Current password is incorrect" });
+      }
+    }
+    
+    secrets.adminPassword = crypto.createHash("sha256").update(newPassword).digest("hex");
+    await saveSecrets(secrets);
+    
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// API Keys endpoints
+app.get("/api/admin/api-keys", requireAdminAuth, async (req, res) => {
+  try {
+    const secrets = await loadSecrets();
+    const keys = {};
+    
+    for (const provider of ["openai", "anthropic", "google", "github"]) {
+      const envKey = getApiKey(provider);
+      const configKey = secrets.apiKeys?.[provider];
+      
+      keys[provider] = {
+        isSet: !!(envKey || configKey),
+        source: envKey ? "env" : (configKey ? "config" : null),
+        masked: maskKey(envKey || configKey),
+        connected: providerStatus[provider] || false
+      };
+    }
+    
+    res.json({ keys });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/admin/api-keys", requireAdminAuth, async (req, res) => {
+  try {
+    const { provider, key } = req.body;
+    if (!["openai", "anthropic", "google", "github"].includes(provider)) {
+      return res.status(400).json({ error: "Invalid provider" });
+    }
+    
+    const secrets = await loadSecrets();
+    if (!secrets.apiKeys) secrets.apiKeys = {};
+    
+    if (key) {
+      secrets.apiKeys[provider] = key;
+    } else {
+      delete secrets.apiKeys[provider];
+    }
+    
+    await saveSecrets(secrets);
+    
+    // Reload providers with new keys
+    await reloadProvidersWithSecrets();
+    
+    res.json({
+      ok: true,
+      masked: maskKey(key),
+      connected: providerStatus[provider] || false
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/admin/api-keys/:provider", requireAdminAuth, async (req, res) => {
+  try {
+    const { provider } = req.params;
+    if (!["openai", "anthropic", "google", "github"].includes(provider)) {
+      return res.status(400).json({ error: "Invalid provider" });
+    }
+    
+    const secrets = await loadSecrets();
+    if (secrets.apiKeys) {
+      delete secrets.apiKeys[provider];
+      await saveSecrets(secrets);
+    }
+    
+    // Reload providers
+    await reloadProvidersWithSecrets();
+    
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Config endpoints (protected)
 app.get("/api/config", async (req, res) => {
   try {
     const config = await loadConfig();
-    res.json({ models: config.models, routing: config.routing, templates: config.templates, providers: { openai: isProviderAvailable("openai"), anthropic: isProviderAvailable("anthropic"), google: isProviderAvailable("google") } });
+    res.json({
+      models: config.models,
+      routing: config.routing,
+      templates: config.templates,
+      providers: {
+        openai: providerStatus.openai || false,
+        anthropic: providerStatus.anthropic || false,
+        google: providerStatus.google || false
+      }
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post("/api/config/models", async (req, res) => {
+app.post("/api/config/models", requireAdminAuth, async (req, res) => {
   try {
     const config = await loadConfig();
     const { modelKey, updates } = req.body;
@@ -277,7 +569,7 @@ app.get("/api/stats", async (req, res) => {
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post("/api/stats/reset", async (req, res) => {
+app.post("/api/stats/reset", requireAdminAuth, async (req, res) => {
   try { await writeJson(statsPath, { totalCost: 0, totalInputTokens: 0, totalOutputTokens: 0, requestCount: 0, byModel: {}, byProject: {}, dailyStats: {} }); res.json({ ok: true }); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -324,14 +616,11 @@ app.post("/api/projects/create", async (req, res) => {
   if (!name) return res.status(400).json({ error: "name required" });
   
   try {
-    // Create GitHub repo
     const repo = await createGitHubRepo(name, description || `Created with AI Code Helper`, true);
     const repoFullName = repo.full_name;
     
-    // Wait a moment for GitHub to initialize
     await new Promise(r => setTimeout(r, 1500));
     
-    // Create README with project spec
     const readme = `# ${name}
 
 ${description || ''}
@@ -351,7 +640,6 @@ ${stack || 'TBD'}
     
     await createOrUpdateFile(repoFullName, "README.md", readme, "Initial project setup");
     
-    // Save to local projects
     const projects = await readJson(projectsPath, []);
     const project = {
       id: createId(),
@@ -493,7 +781,6 @@ app.post("/api/chat", async (req, res) => {
     await updateStats(modelKey, metadata.inputTokens || 0, metadata.outputTokens || 0, cost, projectId);
     if (projectId) await updateProjectCost(projectId, cost);
 
-    // Check for project creation command
     let projectCreated = null;
     const createMatch = fullResponse.match(/CREATE_PROJECT:(\{[\s\S]*?\})/);
     if (createMatch) {

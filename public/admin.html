@@ -27,6 +27,23 @@
     .provider-badge .dot{width:8px;height:8px;border-radius:50%}
     .provider-badge.active .dot{background:var(--green)}
     .provider-badge.inactive .dot{background:var(--red)}
+    .api-key-row{display:flex;align-items:center;padding:14px;background:var(--bg3);border-radius:8px;margin-bottom:10px;flex-wrap:wrap;gap:10px}
+    .api-key-row:last-child{margin-bottom:0}
+    .api-key-info{flex:1;min-width:150px}
+    .api-key-name{font-weight:600;font-size:14px;margin-bottom:2px}
+    .api-key-value{font-family:var(--mono);font-size:12px;color:var(--text2)}
+    .api-key-source{font-size:10px;padding:2px 6px;border-radius:4px;margin-left:8px}
+    .api-key-source.env{background:rgba(88,166,255,0.2);color:var(--accent)}
+    .api-key-source.config{background:rgba(210,153,34,0.2);color:var(--yellow)}
+    .api-key-status{display:flex;align-items:center;gap:6px;font-size:12px}
+    .api-key-status .dot{width:8px;height:8px;border-radius:50%}
+    .api-key-status.connected .dot{background:var(--green)}
+    .api-key-status.disconnected .dot{background:var(--red)}
+    .api-key-actions{display:flex;gap:6px}
+    .api-key-actions button{padding:6px 12px;font-size:12px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--bg4);color:var(--text);font-family:var(--sans)}
+    .api-key-actions button:hover{border-color:var(--accent)}
+    .api-key-actions button.danger:hover{border-color:var(--red);color:var(--red)}
+    .env-notice{font-size:11px;color:var(--text3);margin-top:12px;padding:10px;background:var(--bg3);border-radius:6px;border-left:3px solid var(--accent)}
     .model-card{background:var(--bg3);border-radius:8px;padding:14px;cursor:pointer;border:1px solid transparent;margin-bottom:10px}
     .model-card:hover{border-color:var(--accent)}
     .model-card:last-child{margin-bottom:0}
@@ -66,52 +83,102 @@
     .modal.active{display:flex}
     .modal-content{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto}
     .modal h3{margin-bottom:16px;font-size:17px}
-    .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:12px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;display:none;max-width:90%}
+    .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:12px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;display:none;max-width:90%;z-index:2000}
     .toast.success{border-left:3px solid var(--green)}
     .toast.error{border-left:3px solid var(--red)}
-    .project-row{display:flex;align-items:center;padding:12px;background:var(--bg3);border-radius:8px;margin-bottom:8px;flex-wrap:wrap;gap:8px}
-    .project-row .name{flex:1;font-weight:500;min-width:150px}
-    .project-row .cost{font-family:var(--mono);color:var(--green)}
+    .login-container{display:flex;align-items:center;justify-content:center;min-height:80vh}
+    .login-box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:32px;width:100%;max-width:400px;text-align:center}
+    .login-box h2{margin-bottom:8px}
+    .login-box p{color:var(--text2);margin-bottom:24px;font-size:14px}
+    .login-box .form-group{text-align:left}
+    .login-box button{width:100%;margin-top:8px}
+    .hidden{display:none!important}
+    .logout-btn{position:fixed;top:16px;right:16px;padding:8px 16px;font-size:12px}
   </style>
 </head>
 <body>
-  <a href="/" class="back-link">← Back to Chat</a>
-  <h1>⚙️ <span>Admin Panel</span></h1>
-  <p class="subtitle">Configure AI models, view usage stats, and manage settings</p>
-
-  <div class="grid">
-    <div class="card">
-      <h2>🔌 Provider Status</h2>
-      <div class="provider-status" id="providerStatus"><div class="provider-badge inactive"><span class="dot"></span>Loading...</div></div>
+  <!-- Login Screen -->
+  <div id="loginScreen" class="login-container hidden">
+    <div class="login-box">
+      <h2>🔒 Admin Access</h2>
+      <p id="loginMessage">Enter your admin password</p>
+      <form id="loginForm">
+        <div class="form-group">
+          <label id="passwordLabel">Password</label>
+          <input type="password" id="loginPassword" required minlength="6">
+        </div>
+        <div class="form-group hidden" id="confirmPasswordGroup">
+          <label>Confirm Password</label>
+          <input type="password" id="confirmPassword" minlength="6">
+        </div>
+        <button type="submit" id="loginBtn">Login</button>
+      </form>
     </div>
+  </div>
+
+  <!-- Admin Panel -->
+  <div id="adminPanel" class="hidden">
+    <button class="secondary logout-btn" onclick="logout()">Logout</button>
+    <a href="/" class="back-link">← Back to Chat</a>
+    <h1>⚙️ <span>Admin Panel</span></h1>
+    <p class="subtitle">Configure API keys, AI models, and view usage stats</p>
+
+    <h3 class="section-title" style="margin-top:0;padding-top:0;border:none">🔑 API Keys</h3>
     <div class="card">
-      <h2>📊 Usage Overview</h2>
-      <div class="stat-grid">
-        <div class="stat"><div class="stat-label">Total Cost</div><div class="stat-value cost" id="totalCost">$0.00</div></div>
-        <div class="stat"><div class="stat-label">Requests</div><div class="stat-value" id="totalRequests">0</div></div>
-        <div class="stat"><div class="stat-label">Input Tokens</div><div class="stat-value" id="totalInputTokens">0</div></div>
-        <div class="stat"><div class="stat-label">Output Tokens</div><div class="stat-value" id="totalOutputTokens">0</div></div>
+      <div id="apiKeysList"></div>
+      <div class="env-notice">
+        ⚠️ Environment variables (set in Railway/hosting) take priority over keys entered here.
       </div>
-      <div class="button-row"><button class="secondary danger" onclick="resetStats()">Reset Stats</button></div>
+    </div>
+
+    <div class="grid" style="margin-top:24px">
+      <div class="card">
+        <h2>🔌 Provider Status</h2>
+        <div class="provider-status" id="providerStatus"><div class="provider-badge inactive"><span class="dot"></span>Loading...</div></div>
+      </div>
+      <div class="card">
+        <h2>📊 Usage Overview</h2>
+        <div class="stat-grid">
+          <div class="stat"><div class="stat-label">Total Cost</div><div class="stat-value cost" id="totalCost">$0.00</div></div>
+          <div class="stat"><div class="stat-label">Requests</div><div class="stat-value" id="totalRequests">0</div></div>
+          <div class="stat"><div class="stat-label">Input Tokens</div><div class="stat-value" id="totalInputTokens">0</div></div>
+          <div class="stat"><div class="stat-label">Output Tokens</div><div class="stat-value" id="totalOutputTokens">0</div></div>
+        </div>
+        <div class="button-row"><button class="secondary danger" onclick="resetStats()">Reset Stats</button></div>
+      </div>
+    </div>
+
+    <h3 class="section-title">🤖 Model Configuration</h3>
+    <p class="subtitle">Tap on a model to edit its settings</p>
+    <div class="grid" id="modelCards"></div>
+
+    <h3 class="section-title">📈 Daily Usage (Last 7 Days)</h3>
+    <div class="card">
+      <div class="chart-bar-container" id="dailyChart"></div>
+      <div class="chart-labels" id="chartLabels"></div>
+    </div>
+
+    <h3 class="section-title">📋 Usage by Model</h3>
+    <div class="card"><div id="modelBreakdown"><p style="color:var(--text3)">No usage data yet</p></div></div>
+
+    <h3 class="section-title">🔐 Security</h3>
+    <div class="card">
+      <h2>Change Admin Password</h2>
+      <form id="changePasswordForm">
+        <div class="form-group">
+          <label>Current Password</label>
+          <input type="password" id="currentPassword" required>
+        </div>
+        <div class="form-group">
+          <label>New Password</label>
+          <input type="password" id="newPassword" required minlength="6">
+        </div>
+        <button type="submit">Update Password</button>
+      </form>
     </div>
   </div>
 
-  <h3 class="section-title">🤖 Model Configuration</h3>
-  <p class="subtitle">Tap on a model to edit its settings</p>
-  <div class="grid" id="modelCards"></div>
-
-  <h3 class="section-title">📈 Daily Usage (Last 7 Days)</h3>
-  <div class="card">
-    <div class="chart-bar-container" id="dailyChart"></div>
-    <div class="chart-labels" id="chartLabels"></div>
-  </div>
-
-  <h3 class="section-title">📋 Usage by Model</h3>
-  <div class="card"><div id="modelBreakdown"><p style="color:var(--text3)">No usage data yet</p></div></div>
-
-  <h3 class="section-title">📁 Cost by Project</h3>
-  <div class="card"><div id="projectBreakdown"><p style="color:var(--text3)">No project data yet</p></div></div>
-
+  <!-- Edit Model Modal -->
   <div class="modal" id="editModal">
     <div class="modal-content">
       <h3 id="editModalTitle">Edit Model</h3>
@@ -133,16 +200,215 @@
       </form>
     </div>
   </div>
+
+  <!-- Edit API Key Modal -->
+  <div class="modal" id="apiKeyModal">
+    <div class="modal-content">
+      <h3 id="apiKeyModalTitle">Update API Key</h3>
+      <form id="apiKeyForm">
+        <input type="hidden" id="apiKeyProvider">
+        <div class="form-group">
+          <label id="apiKeyLabel">API Key</label>
+          <input type="password" id="apiKeyInput" placeholder="Enter API key...">
+        </div>
+        <p style="font-size:12px;color:var(--text3);margin-bottom:16px">Leave empty and save to remove the key.</p>
+        <div class="button-row">
+          <button type="submit">Save</button>
+          <button type="button" class="secondary" onclick="closeApiKeyModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
 <script>
-let config=null,stats=null,projects=[];
+let config=null,stats=null,apiKeys={},sessionToken=localStorage.getItem('adminSession');
+const providerNames={openai:'OpenAI',anthropic:'Anthropic',google:'Google',github:'GitHub'};
+
 function showToast(m,t='success'){const e=document.getElementById('toast');e.textContent=m;e.className=`toast ${t}`;e.style.display='block';setTimeout(()=>e.style.display='none',3000)}
 function fmt(n){if(n>=1e6)return(n/1e6).toFixed(2)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'K';return n.toString()}
 
-async function loadConfig(){config=await(await fetch('/api/config')).json();renderProviderStatus();renderModelCards()}
-async function loadStats(){stats=await(await fetch('/api/stats')).json();renderStats();renderDailyChart();renderModelBreakdown();renderProjectBreakdown()}
-async function loadProjects(){projects=await(await fetch('/api/projects/local')).json()}
+function authHeaders(){return sessionToken?{'X-Admin-Session':sessionToken}:{}}
+
+async function checkAuth(){
+  try{
+    const r=await fetch('/api/admin/auth-status',{headers:authHeaders()});
+    const d=await r.json();
+    
+    if(d.needsPassword){
+      showSetupScreen();
+    }else if(!d.isAuthenticated){
+      showLoginScreen();
+    }else{
+      showAdminPanel();
+    }
+  }catch(e){
+    showLoginScreen();
+  }
+}
+
+function showSetupScreen(){
+  document.getElementById('loginScreen').classList.remove('hidden');
+  document.getElementById('adminPanel').classList.add('hidden');
+  document.getElementById('loginMessage').textContent='Create an admin password';
+  document.getElementById('passwordLabel').textContent='New Password';
+  document.getElementById('confirmPasswordGroup').classList.remove('hidden');
+  document.getElementById('loginBtn').textContent='Create Password';
+  document.getElementById('loginForm').onsubmit=setupPassword;
+}
+
+function showLoginScreen(){
+  document.getElementById('loginScreen').classList.remove('hidden');
+  document.getElementById('adminPanel').classList.add('hidden');
+  document.getElementById('loginMessage').textContent='Enter your admin password';
+  document.getElementById('passwordLabel').textContent='Password';
+  document.getElementById('confirmPasswordGroup').classList.add('hidden');
+  document.getElementById('loginBtn').textContent='Login';
+  document.getElementById('loginForm').onsubmit=login;
+}
+
+function showAdminPanel(){
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('adminPanel').classList.remove('hidden');
+  loadAll();
+}
+
+async function setupPassword(e){
+  e.preventDefault();
+  const pw=document.getElementById('loginPassword').value;
+  const confirm=document.getElementById('confirmPassword').value;
+  if(pw!==confirm){showToast('Passwords do not match','error');return}
+  
+  try{
+    const r=await fetch('/api/admin/setup-password',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({password:pw})
+    });
+    const d=await r.json();
+    if(d.error)throw new Error(d.error);
+    sessionToken=d.sessionToken;
+    localStorage.setItem('adminSession',sessionToken);
+    showAdminPanel();
+    showToast('Password created!');
+  }catch(e){showToast(e.message,'error')}
+}
+
+async function login(e){
+  e.preventDefault();
+  const pw=document.getElementById('loginPassword').value;
+  
+  try{
+    const r=await fetch('/api/admin/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({password:pw})
+    });
+    const d=await r.json();
+    if(d.error)throw new Error(d.error);
+    sessionToken=d.sessionToken;
+    localStorage.setItem('adminSession',sessionToken);
+    showAdminPanel();
+    showToast('Logged in!');
+  }catch(e){showToast(e.message,'error')}
+}
+
+async function logout(){
+  await fetch('/api/admin/logout',{method:'POST',headers:authHeaders()});
+  sessionToken=null;
+  localStorage.removeItem('adminSession');
+  showLoginScreen();
+}
+
+async function loadAll(){
+  await Promise.all([loadConfig(),loadStats(),loadApiKeys()]);
+}
+
+async function loadConfig(){
+  config=await(await fetch('/api/config')).json();
+  renderProviderStatus();
+  renderModelCards();
+}
+
+async function loadStats(){
+  stats=await(await fetch('/api/stats')).json();
+  renderStats();
+  renderDailyChart();
+  renderModelBreakdown();
+}
+
+async function loadApiKeys(){
+  try{
+    const r=await fetch('/api/admin/api-keys',{headers:authHeaders()});
+    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
+    const d=await r.json();
+    apiKeys=d.keys;
+    renderApiKeys();
+  }catch(e){console.error(e)}
+}
+
+function renderApiKeys(){
+  const c=document.getElementById('apiKeysList');
+  c.innerHTML=['openai','anthropic','google','github'].map(p=>{
+    const k=apiKeys[p]||{};
+    return `<div class="api-key-row">
+      <div class="api-key-info">
+        <div class="api-key-name">${providerNames[p]}${k.source?`<span class="api-key-source ${k.source}">${k.source==='env'?'ENV VAR':'CONFIG'}</span>`:''}</div>
+        <div class="api-key-value">${k.masked||'Not set'}</div>
+      </div>
+      <div class="api-key-status ${k.isSet&&k.connected?'connected':'disconnected'}">
+        <span class="dot"></span>${k.isSet?(k.connected?'Connected':'Error'):'Missing'}
+      </div>
+      <div class="api-key-actions">
+        <button onclick="openApiKeyModal('${p}')">${k.isSet&&k.source==='config'?'Update':'Add'}</button>
+        ${k.isSet&&k.source==='config'?`<button class="danger" onclick="deleteApiKey('${p}')">Remove</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openApiKeyModal(provider){
+  document.getElementById('apiKeyProvider').value=provider;
+  document.getElementById('apiKeyModalTitle').textContent=`${providerNames[provider]} API Key`;
+  document.getElementById('apiKeyLabel').textContent=provider==='github'?'Personal Access Token':'API Key';
+  document.getElementById('apiKeyInput').value='';
+  document.getElementById('apiKeyModal').classList.add('active');
+}
+
+function closeApiKeyModal(){document.getElementById('apiKeyModal').classList.remove('active')}
+
+document.getElementById('apiKeyForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const provider=document.getElementById('apiKeyProvider').value;
+  const key=document.getElementById('apiKeyInput').value;
+  
+  try{
+    const r=await fetch('/api/admin/api-keys',{
+      method:'POST',
+      headers:{'Content-Type':'application/json',...authHeaders()},
+      body:JSON.stringify({provider,key})
+    });
+    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
+    const d=await r.json();
+    if(d.error)throw new Error(d.error);
+    closeApiKeyModal();
+    showToast(key?'API key saved!':'API key removed!');
+    await loadApiKeys();
+    await loadConfig();
+  }catch(e){showToast(e.message,'error')}
+});
+
+async function deleteApiKey(provider){
+  if(!confirm(`Remove ${providerNames[provider]} API key?`))return;
+  try{
+    const r=await fetch(`/api/admin/api-keys/${provider}`,{method:'DELETE',headers:authHeaders()});
+    if(!r.ok)throw new Error('Failed');
+    showToast('API key removed');
+    await loadApiKeys();
+    await loadConfig();
+  }catch(e){showToast(e.message,'error')}
+}
 
 function renderProviderStatus(){
   document.getElementById('providerStatus').innerHTML=[['openai','OpenAI'],['anthropic','Anthropic'],['google','Google']].map(([k,n])=>`<div class="provider-badge ${config.providers[k]?'active':'inactive'}"><span class="dot"></span>${n}</div>`).join('');
@@ -173,12 +439,6 @@ function renderModelBreakdown(){
   c.innerHTML=Object.entries(stats.byModel).map(([k,d])=>`<div class="breakdown-row"><div class="breakdown-name">${k}</div><div class="breakdown-stats"><div class="breakdown-stat"><div class="label">Reqs</div><div>${d.requests}</div></div><div class="breakdown-stat"><div class="label">Tokens</div><div>${fmt(d.inputTokens+d.outputTokens)}</div></div><div class="breakdown-stat"><div class="label">Cost</div><div>$${d.cost.toFixed(4)}</div></div></div></div>`).join('');
 }
 
-function renderProjectBreakdown(){
-  const c=document.getElementById('projectBreakdown');
-  if(!stats.byProject||!Object.keys(stats.byProject).length){c.innerHTML='<p style="color:var(--text3)">No project data yet</p>';return}
-  c.innerHTML=Object.entries(stats.byProject).map(([k,d])=>`<div class="project-row"><div class="name">${k}</div><div class="cost">$${d.cost.toFixed(4)}</div></div>`).join('');
-}
-
 function openEditModal(k){
   const m=config.models[k];if(!m)return;
   document.getElementById('editModelKey').value=k;
@@ -199,14 +459,52 @@ document.getElementById('editModelForm').addEventListener('submit',async e=>{
   e.preventDefault();
   const k=document.getElementById('editModelKey').value;
   const u={displayName:document.getElementById('editDisplayName').value,provider:document.getElementById('editProvider').value,model:document.getElementById('editModelId').value,description:document.getElementById('editDescription').value,inputCost:parseFloat(document.getElementById('editInputCost').value),outputCost:parseFloat(document.getElementById('editOutputCost').value),maxOutputTokens:parseInt(document.getElementById('editMaxTokens').value),contextWindow:parseInt(document.getElementById('editContextWindow').value)};
-  try{const r=await(await fetch('/api/config/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modelKey:k,updates:u})})).json();if(r.error)throw new Error(r.error);config.models[k]=r.model;renderModelCards();closeEditModal();showToast('Model updated!')}catch(e){showToast('Failed: '+e.message,'error')}
+  try{
+    const r=await fetch('/api/config/models',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({modelKey:k,updates:u})});
+    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
+    const d=await r.json();
+    if(d.error)throw new Error(d.error);
+    config.models[k]=d.model;
+    renderModelCards();
+    closeEditModal();
+    showToast('Model updated!');
+  }catch(e){showToast(e.message,'error')}
 });
 
-async function resetStats(){if(!confirm('Reset all stats?'))return;try{await fetch('/api/stats/reset',{method:'POST'});await loadStats();showToast('Stats reset!')}catch(e){showToast('Failed','error')}}
+document.getElementById('changePasswordForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const current=document.getElementById('currentPassword').value;
+  const newPw=document.getElementById('newPassword').value;
+  
+  try{
+    const r=await fetch('/api/admin/change-password',{
+      method:'POST',
+      headers:{'Content-Type':'application/json',...authHeaders()},
+      body:JSON.stringify({currentPassword:current,newPassword:newPw})
+    });
+    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
+    const d=await r.json();
+    if(d.error)throw new Error(d.error);
+    document.getElementById('currentPassword').value='';
+    document.getElementById('newPassword').value='';
+    showToast('Password updated!');
+  }catch(e){showToast(e.message,'error')}
+});
+
+async function resetStats(){
+  if(!confirm('Reset all stats?'))return;
+  try{
+    const r=await fetch('/api/stats/reset',{method:'POST',headers:authHeaders()});
+    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
+    await loadStats();
+    showToast('Stats reset!');
+  }catch(e){showToast('Failed','error')}
+}
 
 document.getElementById('editModal').addEventListener('click',e=>{if(e.target===document.getElementById('editModal'))closeEditModal()});
+document.getElementById('apiKeyModal').addEventListener('click',e=>{if(e.target===document.getElementById('apiKeyModal'))closeApiKeyModal()});
 
-loadConfig();loadStats();loadProjects();
+checkAuth();
 </script>
 </body>
 </html>

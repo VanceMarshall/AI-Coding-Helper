@@ -1,256 +1,205 @@
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 
-// Provider adapters - each knows how to talk to its API
-const adapters = {
-  openai: null,
-  anthropic: null,
-  google: null
+let openaiClient = null;
+let anthropicClient = null;
+let googleApiKey = null;
+
+const providerStatus = {
+  openai: false,
+  anthropic: false,
+  google: false,
+  github: false
 };
 
-// Initialize providers based on available API keys
-export function initializeProviders() {
-  const status = {
-    openai: false,
-    anthropic: false,
-    google: false
-  };
+export function initializeProviders(keys = {}) {
+  const openaiKey = keys.openai || process.env.OPENAI_API_KEY;
+  const anthropicKey = keys.anthropic || process.env.ANTHROPIC_API_KEY;
+  const googleKey = keys.google || process.env.GOOGLE_API_KEY;
+  const githubKey = keys.github || process.env.GITHUB_TOKEN;
 
-  if (process.env.OPENAI_API_KEY) {
-    adapters.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    status.openai = true;
-    console.log("✓ OpenAI provider initialized");
+  if (openaiKey) {
+    try {
+      openaiClient = new OpenAI({ apiKey: openaiKey });
+      providerStatus.openai = true;
+    } catch (e) {
+      console.warn("Failed to initialize OpenAI:", e.message);
+      providerStatus.openai = false;
+    }
+  } else {
+    openaiClient = null;
+    providerStatus.openai = false;
   }
 
-  if (process.env.ANTHROPIC_API_KEY) {
-    adapters.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-    status.anthropic = true;
-    console.log("✓ Anthropic provider initialized");
+  if (anthropicKey) {
+    try {
+      anthropicClient = new Anthropic({ apiKey: anthropicKey });
+      providerStatus.anthropic = true;
+    } catch (e) {
+      console.warn("Failed to initialize Anthropic:", e.message);
+      providerStatus.anthropic = false;
+    }
+  } else {
+    anthropicClient = null;
+    providerStatus.anthropic = false;
   }
 
-  if (process.env.GOOGLE_API_KEY) {
-    status.google = true;
-    console.log("✓ Google provider initialized");
+  if (googleKey) {
+    googleApiKey = googleKey;
+    providerStatus.google = true;
+  } else {
+    googleApiKey = null;
+    providerStatus.google = false;
   }
 
-  return status;
+  providerStatus.github = !!githubKey;
+
+  return { ...providerStatus };
 }
 
-// Check if a provider is available
+export function reloadProviders(keys) {
+  return initializeProviders(keys);
+}
+
 export function isProviderAvailable(provider) {
-  switch (provider) {
-    case "openai":
-      return !!adapters.openai;
-    case "anthropic":
-      return !!adapters.anthropic;
-    case "google":
-      return !!process.env.GOOGLE_API_KEY;
-    default:
-      return false;
-  }
+  return providerStatus[provider] || false;
 }
 
-// Streaming generator for OpenAI
-async function* streamOpenAI(model, systemPrompt, messages, maxTokens) {
-  if (!adapters.openai) throw new Error("OpenAI not configured");
-
-  const stream = await adapters.openai.chat.completions.create({
-    model,
-    max_tokens: maxTokens,
-    stream: true,
-    messages: [
-      { role: "system", content: systemPrompt },
-      ...messages.map(m => ({
-        role: m.role === "user" ? "user" : "assistant",
-        content: m.content
-      }))
-    ]
-  });
-
-  let fullText = "";
-  for await (const chunk of stream) {
-    const delta = chunk.choices[0]?.delta?.content || "";
-    if (delta) {
-      fullText += delta;
-      yield { type: "text", text: delta };
-    }
-  }
-
-  // Estimate tokens (OpenAI streaming doesn't give exact counts)
-  const inputTokens = Math.ceil((systemPrompt.length + messages.map(m => m.content).join("").length) / 4);
-  const outputTokens = Math.ceil(fullText.length / 4);
-
-  yield {
-    type: "done",
-    model,
-    provider: "openai",
-    inputTokens,
-    outputTokens,
-    fullText
-  };
+export function getProviderStatus() {
+  return { ...providerStatus };
 }
 
-// Streaming generator for Anthropic
-async function* streamAnthropic(model, systemPrompt, messages, maxTokens) {
-  if (!adapters.anthropic) throw new Error("Anthropic not configured");
+export async function* streamCompletion(modelConfig, systemPrompt, messages, maxTokens) {
+  const { provider, model } = modelConfig;
 
-  const stream = await adapters.anthropic.messages.stream({
-    model,
-    max_tokens: maxTokens,
-    system: systemPrompt,
-    messages: messages.map(m => ({
-      role: m.role === "user" ? "user" : "assistant",
-      content: m.content
-    }))
-  });
-
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let fullText = "";
-
-  for await (const event of stream) {
-    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-      fullText += event.delta.text;
-      yield { type: "text", text: event.delta.text };
-    }
-    if (event.type === "message_delta" && event.usage) {
-      outputTokens = event.usage.output_tokens;
-    }
-    if (event.type === "message_start" && event.message?.usage) {
-      inputTokens = event.message.usage.input_tokens;
-    }
-  }
-
-  yield {
-    type: "done",
-    model,
-    provider: "anthropic",
-    inputTokens,
-    outputTokens,
-    fullText
-  };
-}
-
-// Streaming generator for Google
-async function* streamGoogle(model, systemPrompt, messages, maxTokens) {
-  const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) throw new Error("Google API key not configured");
-
-  // Build the request for Gemini API
-  const contents = [];
-  
-  // Add conversation history
-  for (const msg of messages) {
-    contents.push({
-      role: msg.role === "user" ? "user" : "model",
-      parts: [{ text: msg.content }]
-    });
-  }
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents,
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: {
-          maxOutputTokens: maxTokens
-        }
-      })
-    }
-  );
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Google API error: ${response.status} - ${error}`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let fullText = "";
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
+  if (provider === "openai") {
+    if (!openaiClient) throw new Error("OpenAI not configured");
     
-    // Parse streaming JSON responses
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
+    const openaiMessages = [
+      { role: "system", content: systemPrompt },
+      ...messages.map(m => ({ role: m.role, content: m.content }))
+    ];
 
-    for (const line of lines) {
-      if (!line.trim() || line.startsWith("[") || line.startsWith("]") || line === ",") continue;
-      
-      try {
-        // Remove leading comma if present
-        const jsonStr = line.startsWith(",") ? line.slice(1) : line;
-        const data = JSON.parse(jsonStr);
-        
-        if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-          const text = data.candidates[0].content.parts[0].text;
-          fullText += text;
-          yield { type: "text", text };
-        }
-      } catch (e) {
-        // Incomplete JSON, will be handled in next iteration
+    const stream = await openaiClient.chat.completions.create({
+      model,
+      messages: openaiMessages,
+      max_tokens: maxTokens,
+      stream: true,
+      stream_options: { include_usage: true }
+    });
+
+    let inputTokens = 0, outputTokens = 0;
+    for await (const chunk of stream) {
+      if (chunk.choices?.[0]?.delta?.content) {
+        yield { type: "text", text: chunk.choices[0].delta.content };
+      }
+      if (chunk.usage) {
+        inputTokens = chunk.usage.prompt_tokens || 0;
+        outputTokens = chunk.usage.completion_tokens || 0;
       }
     }
-  }
+    yield { type: "done", inputTokens, outputTokens };
 
-  // Estimate tokens
-  const inputTokens = Math.ceil((systemPrompt.length + messages.map(m => m.content).join("").length) / 4);
-  const outputTokens = Math.ceil(fullText.length / 4);
+  } else if (provider === "anthropic") {
+    if (!anthropicClient) throw new Error("Anthropic not configured");
 
-  yield {
-    type: "done",
-    model,
-    provider: "google",
-    inputTokens,
-    outputTokens,
-    fullText
-  };
-}
+    const anthropicMessages = messages.map(m => ({ role: m.role, content: m.content }));
 
-// Main streaming function - routes to the right provider
-export async function* streamCompletion(config, systemPrompt, messages, maxTokens = 4096) {
-  const { provider, model } = config;
+    const stream = await anthropicClient.messages.stream({
+      model,
+      system: systemPrompt,
+      messages: anthropicMessages,
+      max_tokens: maxTokens
+    });
 
-  switch (provider) {
-    case "openai":
-      yield* streamOpenAI(model, systemPrompt, messages, maxTokens);
-      break;
-    case "anthropic":
-      yield* streamAnthropic(model, systemPrompt, messages, maxTokens);
-      break;
-    case "google":
-      yield* streamGoogle(model, systemPrompt, messages, maxTokens);
-      break;
-    default:
-      throw new Error(`Unknown provider: ${provider}`);
-  }
-}
-
-// Non-streaming completion for simple use cases
-export async function complete(config, systemPrompt, messages, maxTokens = 4096) {
-  let fullText = "";
-  let metadata = {};
-
-  for await (const chunk of streamCompletion(config, systemPrompt, messages, maxTokens)) {
-    if (chunk.type === "text") {
-      fullText += chunk.text;
-    } else if (chunk.type === "done") {
-      metadata = chunk;
+    for await (const event of stream) {
+      if (event.type === "content_block_delta" && event.delta?.text) {
+        yield { type: "text", text: event.delta.text };
+      }
     }
-  }
 
-  return { text: fullText, ...metadata };
+    const finalMessage = await stream.finalMessage();
+    yield {
+      type: "done",
+      inputTokens: finalMessage.usage?.input_tokens || 0,
+      outputTokens: finalMessage.usage?.output_tokens || 0
+    };
+
+  } else if (provider === "google") {
+    if (!googleApiKey) throw new Error("Google not configured");
+
+    const contents = [];
+    
+    // Add system prompt as first user message context
+    contents.push({
+      role: "user",
+      parts: [{ text: `System Instructions: ${systemPrompt}\n\nNow, please respond to the conversation below:` }]
+    });
+    contents.push({
+      role: "model", 
+      parts: [{ text: "I understand. I'll follow those instructions for our conversation." }]
+    });
+
+    // Add conversation messages
+    for (const m of messages) {
+      contents.push({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content }]
+      });
+    }
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${googleApiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents,
+          generationConfig: { maxOutputTokens: maxTokens }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Google API error: ${error}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let totalInputTokens = 0, totalOutputTokens = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const data = JSON.parse(line.slice(6));
+          if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+            yield { type: "text", text: data.candidates[0].content.parts[0].text };
+          }
+          if (data.usageMetadata) {
+            totalInputTokens = data.usageMetadata.promptTokenCount || 0;
+            totalOutputTokens = data.usageMetadata.candidatesTokenCount || 0;
+          }
+        } catch (e) {}
+      }
+    }
+
+    yield { type: "done", inputTokens: totalInputTokens, outputTokens: totalOutputTokens };
+
+  } else {
+    throw new Error(`Unknown provider: ${provider}`);
+  }
 }
 
-// Calculate cost based on token usage
 export function calculateCost(modelConfig, inputTokens, outputTokens) {
   const inputCost = (inputTokens / 1_000_000) * modelConfig.inputCost;
   const outputCost = (outputTokens / 1_000_000) * modelConfig.outputCost;
