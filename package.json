@@ -1,6 +1,6 @@
 {
   "name": "ai-coding-helper",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "engines": {
     "node": ">=18.0.0"
@@ -13,18 +13,4 @@
     "openai": "^4.20.0",
     "@anthropic-ai/sdk": "^0.10.0"
   }
-}
-  },
-  "keywords": [
-    "ai",
-    "coding",
-    "assistant",
-    "gpt-5",
-    "gemini",
-    "claude",
-    "github",
-    "multi-provider"
-  ],
-  "author": "",
-  "license": "MIT"
 }
