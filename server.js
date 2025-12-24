@@ -298,8 +298,15 @@ ${loadedFileCount > 0 ? `✅ ${loadedFileCount} files have been pre-loaded below
 - Only request files that exist in the repository structure shown below.
 - Do NOT use example paths like "path/to/file" - use real file paths from this repo.
 
+## IMPORTANT: Applying Code Changes
+When you show code in a code block, the user will see an "Apply" button next to it.
+- Clicking "Apply" will DIRECTLY COMMIT the code to their GitHub repository
+- You do NOT need to manually push changes - the system handles it automatically
+- Always include a filepath comment at the top so the system knows where to save it
+- The user just clicks "Apply" and it's done!
+
 ## When Showing Code Changes
-Show the complete file with a filepath comment:
+ALWAYS include the filepath as the first line comment so the Apply button works:
 \`\`\`javascript
 // filepath: src/components/Button.jsx
 import React from 'react';
