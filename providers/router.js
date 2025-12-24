@@ -1,83 +1,57 @@
-// Smart router that decides which model to use based on message content
+// Smart message routing based on complexity and keywords
 
 export function routeMessage(message, config, hasFiles = false) {
-  const routing = config.routing;
-  const models = config.models;
+  const msg = message.toLowerCase();
+  const routing = config.routing || {};
+  const keywords = routing.keywords || {};
   
-  // If files are attached and threshold says so, use full model
-  if (hasFiles && routing.thresholds.fileAttachmentTriggersFull) {
-    return {
-      modelKey: "full",
-      model: models.full,
-      reason: "Files attached - using full model"
-    };
-  }
-
-  const messageLower = message.toLowerCase().trim();
-  const wordCount = message.split(/\s+/).length;
-
-  // Check for explicit full-model patterns first (they take priority)
-  for (const pattern of routing.fullPatterns) {
-    if (messageLower.includes(pattern.toLowerCase())) {
+  // Check for "full" model keywords (complex tasks)
+  const fullKeywords = keywords.full || ["build", "create", "implement", "debug", "refactor", "architect", "design", "complex", "analyze", "explain in detail"];
+  for (const keyword of fullKeywords) {
+    if (msg.includes(keyword)) {
       return {
         modelKey: "full",
-        model: models.full,
-        reason: `Detected coding/building intent: "${pattern}"`
+        model: config.models.full,
+        reason: `Keyword: "${keyword}"`
       };
     }
   }
-
-  // Check for fast-model patterns (simple questions)
-  for (const pattern of routing.fastPatterns) {
-    const regex = new RegExp(pattern, "i");
-    if (regex.test(messageLower)) {
-      // But if it's a long message, still use full
-      if (wordCount > routing.thresholds.longMessageWords) {
-        return {
-          modelKey: "full",
-          model: models.full,
-          reason: "Long message - using full model despite question format"
-        };
-      }
+  
+  // Check for "fast" model keywords (simple tasks)
+  const fastKeywords = keywords.fast || ["quick", "simple", "brief", "short", "summarize", "list", "what is", "define"];
+  for (const keyword of fastKeywords) {
+    if (msg.includes(keyword)) {
       return {
         modelKey: "fast",
-        model: models.fast,
-        reason: `Simple question detected: "${pattern}"`
+        model: config.models.fast,
+        reason: `Keyword: "${keyword}"`
       };
     }
   }
-
-  // Check message length
-  if (wordCount <= routing.thresholds.shortMessageWords) {
+  
+  // Default based on whether files are loaded
+  const defaults = routing.defaults || { withFiles: "full", withoutFiles: "fast" };
+  
+  if (hasFiles) {
     return {
-      modelKey: "fast",
-      model: models.fast,
-      reason: `Short message (${wordCount} words)`
+      modelKey: defaults.withFiles || "full",
+      model: config.models[defaults.withFiles] || config.models.full,
+      reason: "Default: has files loaded"
     };
   }
-
-  if (wordCount >= routing.thresholds.longMessageWords) {
-    return {
-      modelKey: "full",
-      model: models.full,
-      reason: `Long message (${wordCount} words)`
-    };
-  }
-
-  // Default to full for medium-length messages (safer for coding)
+  
   return {
-    modelKey: "full",
-    model: models.full,
-    reason: "Default to full model for medium-length messages"
+    modelKey: defaults.withoutFiles || "fast",
+    model: config.models[defaults.withoutFiles] || config.models.fast,
+    reason: "Default: no files"
   };
 }
 
-// Preview which model would be used (for UI indicator)
 export function previewRoute(message, config, hasFiles = false) {
   const result = routeMessage(message, config, hasFiles);
   return {
     modelKey: result.modelKey,
-    displayName: result.model.displayName,
+    modelName: result.model?.displayName || result.modelKey,
     reason: result.reason
   };
 }
