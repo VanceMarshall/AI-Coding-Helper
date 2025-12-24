@@ -1,0 +1,31 @@
+{
+  "name": "ai-coding-helper",
+  "version": "3.0.0",
+  "description": "AI-powered coding assistant with multi-provider support, smart routing, and admin panel",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "express": "^4.18.2",
+    "openai": "^4.20.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "ai",
+    "coding",
+    "assistant",
+    "gpt-5",
+    "gemini",
+    "claude",
+    "github",
+    "multi-provider"
+  ],
+  "author": "",
+  "license": "MIT"
+}
