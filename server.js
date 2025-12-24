@@ -34,7 +34,7 @@ const AUTO_LOAD_FILES = {
   config: ['.gitignore', 'docker-compose.yml', 'Dockerfile', '.env.example']
 };
 
-const IMPORTANT_DIRS = ['src', 'app', 'pages', 'components', 'lib', 'utils', 'api', 'routes', 'models', 'services'];
+const IMPORTANT_DIRS = ['src', 'app', 'pages', 'components', 'lib', 'utils', 'api', 'routes', 'models', 'services', 'providers', 'public', 'config'];
 
 async function loadConfig() {
   const text = await fs.readFile(CONFIG_PATH, "utf8");
@@ -222,9 +222,11 @@ function selectFilesToAutoLoad(filePaths, stack, maxFiles = 20) {
     return false;
   };
   
+  // Add root level config files first
   AUTO_LOAD_FILES.always.forEach(f => addIfExists(f));
   AUTO_LOAD_FILES.config.forEach(f => addIfExists(f));
   
+  // Stack-specific files
   if (["Node.js", "Next.js", "Vite", "Remix", "Nuxt", "SvelteKit"].includes(stack)) {
     AUTO_LOAD_FILES.node.forEach(f => addIfExists(f));
   }
@@ -232,6 +234,7 @@ function selectFilesToAutoLoad(filePaths, stack, maxFiles = 20) {
   if (stack === "Rust") AUTO_LOAD_FILES.rust.forEach(f => addIfExists(f));
   if (stack === "Go") AUTO_LOAD_FILES.go.forEach(f => addIfExists(f));
   
+  // Entry points
   const entryPoints = [
     'src/index.js', 'src/index.ts', 'src/index.tsx', 'src/main.js', 'src/main.ts', 'src/main.tsx',
     'src/App.js', 'src/App.tsx', 'src/app.js', 'src/app.tsx',
@@ -242,11 +245,16 @@ function selectFilesToAutoLoad(filePaths, stack, maxFiles = 20) {
   ];
   entryPoints.forEach(f => addIfExists(f));
   
+  // Important directories - grab key files
   for (const dir of IMPORTANT_DIRS) {
-    const dirFiles = filePaths.filter(f => f.startsWith(dir + '/') && !f.includes('test') && !f.includes('spec'));
-    const indexFiles = dirFiles.filter(f => f.match(/\/(index|main)\.(js|ts|tsx|py|go|rs)$/));
+    const dirFiles = filePaths.filter(f => f.startsWith(dir + '/') && !f.includes('test') && !f.includes('spec') && !f.includes('.map'));
+    // Index files first
+    const indexFiles = dirFiles.filter(f => f.match(/\/(index|main)\.(js|ts|tsx|jsx|py|go|rs)$/));
     indexFiles.slice(0, 2).forEach(f => addIfExists(f));
-    if (selected.length < maxFiles) dirFiles.slice(0, 2).forEach(f => addIfExists(f));
+    // Then other important files
+    if (selected.length < maxFiles) {
+      dirFiles.filter(f => f.match(/\.(js|ts|tsx|jsx|json|py|go|rs|html|css)$/)).slice(0, 3).forEach(f => addIfExists(f));
+    }
   }
   
   return selected.slice(0, maxFiles);
@@ -258,37 +266,46 @@ function parseFileRequests(response) {
     /\[LOAD_FILE:\s*([^\]]+)\]/gi,
     /\[VIEW_FILE:\s*([^\]]+)\]/gi
   ];
+  
+  // Paths to ignore (examples, placeholders)
+  const ignorePaths = ['path/to/file', 'path/to/', 'example', 'your-file', 'filename'];
+  
   const files = [];
   for (const pattern of patterns) {
     let match;
     while ((match = pattern.exec(response)) !== null) {
       const file = match[1].trim();
-      if (file && !files.includes(file)) files.push(file);
+      // Skip if it's an example/placeholder path
+      const isExample = ignorePaths.some(p => file.toLowerCase().includes(p));
+      if (file && !files.includes(file) && !isExample && file.length < 200) {
+        files.push(file);
+      }
     }
   }
   return files;
 }
 
 function buildSystemPrompt(repoFullName, filePaths, stack, fileContents = {}, mode = "building") {
+  const loadedFileCount = Object.keys(fileContents).length;
+  
   let prompt = mode === "planning" 
     ? `You are an expert software architect helping plan a new application. Ask clarifying questions, recommend tech stack, and create a project plan. When ready, output: CREATE_PROJECT:{"name":"repo-name","description":"...","stack":"...","features":[...],"pages":[...]}`
-    : `You are an expert full-stack engineer with FULL ACCESS to read any file in this repository.
+    : `You are an expert full-stack engineer. You have FULL ACCESS to this repository's files.
 
-## Your Capabilities
-- You can see the complete file structure below
-- Key project files have been pre-loaded for you
-- To see ANY other file, use: [READ_FILE: path/to/file]
-- The system will automatically load requested files
+## IMPORTANT: File Access
+${loadedFileCount > 0 ? `✅ ${loadedFileCount} files have been pre-loaded below - you can see their COMPLETE contents.` : '⚠️ No files were auto-loaded.'}
+- To read any OTHER file not shown below, use: [READ_FILE: exact/path/to/file.js]
+- Only request files that exist in the repository structure shown below.
+- Do NOT use example paths like "path/to/file" - use real file paths from this repo.
 
-## When You Need More Files
-Just say: [READ_FILE: src/components/Button.tsx]
-You can request multiple: [READ_FILE: src/utils/api.ts] [READ_FILE: src/hooks/useAuth.ts]
-
-## Code Changes
-When modifying code, show the complete file:
+## When Showing Code Changes
+Show the complete file with a filepath comment:
 \`\`\`javascript
 // filepath: src/components/Button.jsx
-// ... complete file content
+import React from 'react';
+export function Button({ children }) {
+  return <button>{children}</button>;
+}
 \`\`\`
 `;
 
@@ -298,32 +315,23 @@ When modifying code, show the complete file:
     prompt += "\n";
   }
 
+  // Show file structure
   if (filePaths?.length > 0) {
-    prompt += `\n## Repository Structure (${filePaths.length} files)\n\`\`\`\n`;
-    const dirs = {};
-    filePaths.forEach(p => {
-      const parts = p.split('/');
-      const dir = parts.length > 1 ? parts.slice(0, -1).join('/') : '.';
-      if (!dirs[dir]) dirs[dir] = [];
-      dirs[dir].push(parts[parts.length - 1]);
-    });
-    Object.keys(dirs).sort().slice(0, 50).forEach(dir => {
-      if (dir === '.') dirs[dir].forEach(f => prompt += `${f}\n`);
-      else {
-        prompt += `${dir}/\n`;
-        dirs[dir].slice(0, 10).forEach(f => prompt += `  ${f}\n`);
-        if (dirs[dir].length > 10) prompt += `  ... and ${dirs[dir].length - 10} more\n`;
-      }
-    });
+    prompt += `\n## Repository Files (${filePaths.length} total)\n\`\`\`\n`;
+    filePaths.slice(0, 100).forEach(f => prompt += `${f}\n`);
+    if (filePaths.length > 100) prompt += `... and ${filePaths.length - 100} more files\n`;
     prompt += "```\n";
   }
 
-  if (Object.keys(fileContents).length > 0) {
-    prompt += "\n## Pre-loaded Files\n";
+  // Show loaded file contents - THIS IS THE KEY PART
+  if (loadedFileCount > 0) {
+    prompt += `\n## 📂 Pre-loaded File Contents (${loadedFileCount} files)\n`;
+    prompt += "You can see the COMPLETE contents of these files:\n\n";
+    
     for (const [fp, content] of Object.entries(fileContents)) {
-      const ext = fp.split('.').pop();
-      const truncated = content.length > 12000 ? content.slice(0, 12000) + "\n... (truncated)" : content;
-      prompt += `### ${fp}\n\`\`\`${ext}\n${truncated}\n\`\`\`\n\n`;
+      const ext = fp.split('.').pop() || 'txt';
+      const truncated = content.length > 10000 ? content.slice(0, 10000) + "\n\n... [truncated - file continues]" : content;
+      prompt += `### 📄 ${fp}\n\`\`\`${ext}\n${truncated}\n\`\`\`\n\n`;
     }
   }
 
@@ -638,24 +646,40 @@ app.post("/api/chat", async (req, res) => {
       try {
         filePaths = await listRepoFiles(repo);
         stack = detectStack(filePaths);
+        console.log(`[Chat] Repo: ${repo}, Stack: ${stack}, Total files: ${filePaths.length}`);
         
         // Smart auto-load key files
         const autoLoadList = selectFilesToAutoLoad(filePaths, stack);
         const previouslyLoaded = conversation.loadedFiles || [];
         const allToLoad = [...new Set([...autoLoadList, ...loadedFiles, ...previouslyLoaded])];
         
+        console.log(`[Chat] Auto-loading files: ${allToLoad.join(', ')}`);
+        
         res.write(`data: ${JSON.stringify({ type: "status", status: `Loading ${allToLoad.length} project files...` })}\n\n`);
         
+        let loadedCount = 0;
         for (const fp of allToLoad) {
-          try { fileContents[fp] = await getFileFromGitHub(repo, fp); }
-          catch (err) { console.warn(`Could not load ${fp}`, err.message); }
+          try { 
+            const content = await getFileFromGitHub(repo, fp);
+            fileContents[fp] = content;
+            loadedCount++;
+            console.log(`[Chat] Loaded: ${fp} (${content.length} chars)`);
+          }
+          catch (err) { 
+            console.log(`[Chat] Failed to load ${fp}: ${err.message}`);
+          }
         }
         
+        console.log(`[Chat] Successfully loaded ${loadedCount} files`);
         conversation.loadedFiles = Object.keys(fileContents);
-      } catch (err) { console.warn("Could not list files", err.message); }
+      } catch (err) { 
+        console.warn("[Chat] Could not list files", err.message); 
+      }
     }
 
     const systemPrompt = buildSystemPrompt(repo, filePaths, stack, fileContents, mode);
+    console.log(`[Chat] System prompt length: ${systemPrompt.length} chars`);
+    
     conversation.messages.push({ role: "user", content: message, timestamp: new Date().toISOString() });
 
     res.write(`data: ${JSON.stringify({ type: "start", conversationId: conversation.id, model: modelConfig.displayName, modelKey, routeReason, filesLoaded: Object.keys(fileContents).length })}\n\n`);
@@ -675,6 +699,7 @@ app.post("/api/chat", async (req, res) => {
     let additionalFilesLoaded = [];
     
     if (requestedFiles.length > 0 && repo) {
+      console.log(`[Chat] AI requested files: ${requestedFiles.join(', ')}`);
       res.write(`data: ${JSON.stringify({ type: "status", status: `Loading ${requestedFiles.length} requested files...` })}\n\n`);
       
       for (const fp of requestedFiles) {
@@ -687,6 +712,7 @@ app.post("/api/chat", async (req, res) => {
             fullResponse += `\n\n---\n📄 **${fp}:**\n\`\`\`\n${displayContent}\n\`\`\`\n`;
             res.write(`data: ${JSON.stringify({ type: "text", text: `\n\n---\n📄 **${fp}:**\n\`\`\`\n${displayContent}\n\`\`\`\n` })}\n\n`);
           } catch (err) {
+            console.log(`[Chat] Failed to load requested file ${fp}: ${err.message}`);
             fullResponse += `\n\n⚠️ Could not load ${fp}: ${err.message}`;
             res.write(`data: ${JSON.stringify({ type: "text", text: `\n\n⚠️ Could not load ${fp}: ${err.message}` })}\n\n`);
           }
@@ -726,7 +752,7 @@ app.post("/api/chat", async (req, res) => {
     res.write(`data: ${JSON.stringify({ type: "done", model: modelConfig.displayName, modelKey, cost, inputTokens: metadata.inputTokens, outputTokens: metadata.outputTokens, projectCreated, additionalFilesLoaded })}\n\n`);
     res.end();
   } catch (err) {
-    console.error("Chat error", err);
+    console.error("[Chat] Error:", err);
     res.write(`data: ${JSON.stringify({ type: "error", error: err.message })}\n\n`);
     res.end();
   }

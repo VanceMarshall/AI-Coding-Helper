@@ -35,7 +35,6 @@ export function initializeProviders(keys = {}) {
     try {
       anthropicClient = new Anthropic({ apiKey: anthropicKey });
       providerStatus.anthropic = true;
-      console.log("Anthropic client initialized successfully");
     } catch (e) {
       console.warn("Failed to initialize Anthropic:", e.message);
       providerStatus.anthropic = false;
@@ -106,38 +105,32 @@ export async function* streamCompletion(modelConfig, systemPrompt, messages, max
 
     const anthropicMessages = messages.map(m => ({ role: m.role, content: m.content }));
 
-    console.log("Calling Anthropic with model:", model);
-    
-    // Use the create method with stream: true instead of .stream()
-    const response = await anthropicClient.messages.create({
+    const stream = await anthropicClient.messages.stream({
       model,
       system: systemPrompt,
       messages: anthropicMessages,
-      max_tokens: maxTokens,
-      stream: true
+      max_tokens: maxTokens
     });
 
-    let inputTokens = 0, outputTokens = 0;
-    
-    for await (const event of response) {
+    for await (const event of stream) {
       if (event.type === "content_block_delta" && event.delta?.text) {
         yield { type: "text", text: event.delta.text };
       }
-      if (event.type === "message_start" && event.message?.usage) {
-        inputTokens = event.message.usage.input_tokens || 0;
-      }
-      if (event.type === "message_delta" && event.usage) {
-        outputTokens = event.usage.output_tokens || 0;
-      }
     }
 
-    yield { type: "done", inputTokens, outputTokens };
+    const finalMessage = await stream.finalMessage();
+    yield {
+      type: "done",
+      inputTokens: finalMessage.usage?.input_tokens || 0,
+      outputTokens: finalMessage.usage?.output_tokens || 0
+    };
 
   } else if (provider === "google") {
     if (!googleApiKey) throw new Error("Google not configured");
 
     const contents = [];
     
+    // Add system prompt as first user message context
     contents.push({
       role: "user",
       parts: [{ text: `System Instructions: ${systemPrompt}\n\nNow, please respond to the conversation below:` }]
@@ -147,6 +140,7 @@ export async function* streamCompletion(modelConfig, systemPrompt, messages, max
       parts: [{ text: "I understand. I'll follow those instructions for our conversation." }]
     });
 
+    // Add conversation messages
     for (const m of messages) {
       contents.push({
         role: m.role === "assistant" ? "model" : "user",
