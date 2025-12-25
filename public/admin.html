@@ -1,285 +1,239 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <title>Admin - AI Code Helper</title>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>AI Coding Helper Admin</title>
   <style>
-    :root{--bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--bg4:#30363d;--border:#30363d;--text:#e6edf3;--text2:#8b949e;--text3:#6e7681;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;--purple:#a371f7;--sans:'Plus Jakarta Sans',sans-serif;--mono:'JetBrains Mono',monospace}
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:var(--sans);background:var(--bg);color:var(--text);line-height:1.6;padding:16px;max-width:1200px;margin:0 auto}
-    h1{font-size:24px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:12px}
-    h1 span{background:linear-gradient(135deg,var(--accent),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-    .subtitle{color:var(--text2);margin-bottom:24px;font-size:14px}
-    .back-link{color:var(--accent);text-decoration:none;display:inline-flex;align-items:center;gap:6px;margin-bottom:20px;font-size:14px;padding:8px 0}
-    .back-link:hover{text-decoration:underline}
-    .grid{display:grid;grid-template-columns:1fr;gap:16px;margin-bottom:24px}
-    @media(min-width:768px){.grid{grid-template-columns:repeat(2,1fr)}}
-    .card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px}
-    .card h2{font-size:15px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px}
-    .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
-    .stat{background:var(--bg3);padding:14px;border-radius:8px}
-    .stat-label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
-    .stat-value{font-size:20px;font-weight:700;font-family:var(--mono)}
-    .stat-value.cost{color:var(--green)}
-    .provider-status{display:flex;gap:10px;flex-wrap:wrap}
-    .provider-badge{display:flex;align-items:center;gap:6px;padding:8px 14px;background:var(--bg3);border-radius:20px;font-size:13px;font-weight:500}
-    .provider-badge .dot{width:8px;height:8px;border-radius:50%}
-    .provider-badge.active .dot{background:var(--green)}
-    .provider-badge.inactive .dot{background:var(--red)}
-    .api-key-row{display:flex;align-items:center;padding:14px;background:var(--bg3);border-radius:8px;margin-bottom:10px;flex-wrap:wrap;gap:10px}
-    .api-key-row:last-child{margin-bottom:0}
-    .api-key-info{flex:1;min-width:150px}
-    .api-key-name{font-weight:600;font-size:14px;margin-bottom:2px}
-    .api-key-value{font-family:var(--mono);font-size:12px;color:var(--text2)}
-    .api-key-source{font-size:10px;padding:2px 6px;border-radius:4px;margin-left:8px}
-    .api-key-source.env{background:rgba(88,166,255,0.2);color:var(--accent)}
-    .api-key-source.config{background:rgba(210,153,34,0.2);color:var(--yellow)}
-    .api-key-status{display:flex;align-items:center;gap:6px;font-size:12px}
-    .api-key-status .dot{width:8px;height:8px;border-radius:50%}
-    .api-key-status.connected .dot{background:var(--green)}
-    .api-key-status.disconnected .dot{background:var(--red)}
-    .api-key-actions{display:flex;gap:6px}
-    .api-key-actions button{padding:6px 12px;font-size:12px;border-radius:6px;cursor:pointer;border:1px solid var(--border);background:var(--bg4);color:var(--text);font-family:var(--sans)}
-    .api-key-actions button:hover{border-color:var(--accent)}
-    .api-key-actions button.danger:hover{border-color:var(--red);color:var(--red)}
-    .env-notice{font-size:11px;color:var(--text3);margin-top:12px;padding:10px;background:var(--bg3);border-radius:6px;border-left:3px solid var(--accent)}
-    .model-card{background:var(--bg3);border-radius:8px;padding:14px;cursor:pointer;border:1px solid transparent;margin-bottom:10px}
-    .model-card:hover{border-color:var(--accent)}
-    .model-card:last-child{margin-bottom:0}
-    .model-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px}
-    .model-name{font-weight:600;font-size:14px}
-    .model-badge{font-size:10px;padding:4px 10px;border-radius:12px;text-transform:uppercase;letter-spacing:.5px}
-    .model-badge.fast{background:rgba(63,185,80,.15);color:var(--green)}
-    .model-badge.full{background:rgba(88,166,255,.15);color:var(--accent)}
-    .model-badge.fallback{background:rgba(163,113,247,.15);color:var(--purple)}
-    .model-details{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;font-size:12px}
-    .model-detail{display:flex;justify-content:space-between}
-    .model-detail .label{color:var(--text2)}
-    .model-detail .value{font-family:var(--mono)}
-    .section-title{font-size:18px;font-weight:600;margin:24px 0 14px;padding-top:20px;border-top:1px solid var(--border)}
-    .chart-bar-container{display:flex;align-items:flex-end;gap:4px;height:80px;padding:8px 0}
-    .chart-bar{flex:1;background:var(--accent);border-radius:4px 4px 0 0;min-height:4px}
-    .chart-labels{display:flex;justify-content:space-between;font-size:11px;color:var(--text3)}
-    .breakdown-row{display:flex;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px}
-    .breakdown-row:last-child{border-bottom:none}
-    .breakdown-name{flex:1;font-weight:500;min-width:120px}
-    .breakdown-stats{display:flex;gap:16px;font-size:12px;font-family:var(--mono)}
-    .breakdown-stat{text-align:right}
-    .breakdown-stat .label{font-size:10px;color:var(--text3);text-transform:uppercase}
-    .form-group{margin-bottom:14px}
-    .form-group label{display:block;font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
-    .form-group input,.form-group select{width:100%;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px}
-    .form-group input:focus,.form-group select:focus{outline:none;border-color:var(--accent)}
-    .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    button{padding:10px 20px;background:var(--accent);color:var(--bg);border:none;border-radius:8px;font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;width:100%}
-    @media(min-width:480px){button{width:auto}}
-    button:hover{opacity:.9}
-    button.secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border)}
-    button.danger{background:var(--red)}
-    .button-row{display:flex;flex-direction:column;gap:10px;margin-top:14px}
-    @media(min-width:480px){.button-row{flex-direction:row}}
-    .modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px}
-    .modal.active{display:flex}
-    .modal-content{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto}
-    .modal h3{margin-bottom:16px;font-size:17px}
-    .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:12px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;display:none;max-width:90%;z-index:2000}
-    .toast.success{border-left:3px solid var(--green)}
-    .toast.error{border-left:3px solid var(--red)}
-    .login-container{display:flex;align-items:center;justify-content:center;min-height:80vh}
-    .login-box{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:32px;width:100%;max-width:400px;text-align:center}
-    .login-box h2{margin-bottom:8px}
-    .login-box p{color:var(--text2);margin-bottom:24px;font-size:14px}
-    .login-box .form-group{text-align:left}
-    .login-box button{width:100%;margin-top:8px}
+    :root{--bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;--green:#2ea043;--red:#f85149;--yellow:#d29922;--radius:14px}
+    *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    body{margin:0;background:linear-gradient(180deg,var(--bg),#090b10);color:var(--text)}
+    a{color:var(--accent);text-decoration:none}
+    .wrap{max-width:1100px;margin:0 auto;padding:24px}
+    .top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+    .brand{display:flex;align-items:center;gap:12px}
+    .logo{width:38px;height:38px;border-radius:10px;background:radial-gradient(circle at 30% 30%,#7ee787,transparent 55%),radial-gradient(circle at 70% 70%,#58a6ff,transparent 55%),var(--bg3);border:1px solid #30363d}
+    h1{font-size:18px;margin:0}
+    .pill{font-size:12px;padding:6px 10px;border:1px solid #30363d;border-radius:999px;color:var(--muted);background:rgba(33,38,45,.4)}
+    .grid{display:grid;grid-template-columns:1fr;gap:14px}
+    @media(min-width:900px){.grid{grid-template-columns:1fr 1fr}}
+    .card{background:rgba(22,27,34,.65);border:1px solid #30363d;border-radius:var(--radius);padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);backdrop-filter:blur(10px)}
+    .card h2{margin:0 0 10px;font-size:14px;color:#c9d1d9}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .row > *{flex:1}
+    .row .auto{flex:0}
+    label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+    input,select,textarea{width:100%;background:rgba(13,17,23,.6);border:1px solid #30363d;border-radius:12px;color:var(--text);padding:10px 12px;outline:none}
+    textarea{min-height:90px;resize:vertical}
+    button{cursor:pointer;border:none;border-radius:12px;padding:10px 12px;background:var(--accent);color:#081018;font-weight:700}
+    button.secondary{background:rgba(88,166,255,.15);color:var(--text);border:1px solid #30363d}
+    button.danger{background:rgba(248,81,73,.14);color:var(--text);border:1px solid rgba(248,81,73,.35)}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .muted{color:var(--muted);font-size:12px}
+    .status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+    .dot{width:9px;height:9px;border-radius:999px;background:var(--muted)}
+    .dot.ok{background:var(--green)}
+    .dot.warn{background:var(--yellow)}
+    .dot.bad{background:var(--red)}
+    .toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(33,38,45,.95);border:1px solid #30363d;border-radius:14px;padding:10px 14px;display:none;max-width:560px}
+    .toast.show{display:block}
+    .toast b{margin-right:8px}
     .hidden{display:none!important}
-    .logout-btn{position:fixed;top:16px;right:16px;padding:8px 16px;font-size:12px}
+    .divider{height:1px;background:#30363d;margin:12px 0}
+    .kpi{display:flex;gap:14px;flex-wrap:wrap}
+    .kpi .item{flex:1;min-width:140px;background:rgba(13,17,23,.55);border:1px solid #30363d;border-radius:12px;padding:10px}
+    .kpi .item .v{font-size:18px;font-weight:800}
+    .badge{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid #30363d;background:rgba(13,17,23,.55);color:var(--muted)}
+    .right{display:flex;align-items:center;gap:10px}
+    .mini{font-size:12px;padding:8px 10px;border-radius:12px}
   </style>
 </head>
 <body>
-  <!-- Login Screen -->
-  <div id="loginScreen" class="login-container hidden">
-    <div class="login-box">
-      <h2>🔒 Admin Access</h2>
-      <p id="loginMessage">Enter your admin password</p>
-      <form id="loginForm">
-        <div class="form-group">
-          <label id="passwordLabel">Password</label>
-          <input type="password" id="loginPassword" required minlength="6">
-        </div>
-        <div class="form-group hidden" id="confirmPasswordGroup">
-          <label>Confirm Password</label>
-          <input type="password" id="confirmPassword" minlength="6">
-        </div>
-        <button type="submit" id="loginBtn">Login</button>
-      </form>
+<div class="wrap">
+  <div class="top">
+    <div class="brand">
+      <div class="logo"></div>
+      <div>
+        <h1>AI Coding Helper Admin</h1>
+        <div class="muted">Manage providers, models, keys, and sync</div>
+      </div>
+    </div>
+    <div class="right">
+      <span id="modelSyncStatus" class="pill">Model list: not synced yet</span>
+      <button id="logoutBtn" class="secondary mini hidden" onclick="logout()">Logout</button>
     </div>
   </div>
 
-  <!-- Admin Panel -->
-  <div id="adminPanel" class="hidden">
-    <button class="secondary logout-btn" onclick="logout()">Logout</button>
-    <a href="/" class="back-link">← Back to Chat</a>
-    <h1>⚙️ <span>Admin Panel</span></h1>
-    <p class="subtitle">Configure API keys, AI models, and view usage stats</p>
+  <!-- Login / Setup -->
+  <div id="loginScreen" class="card hidden">
+    <h2 id="loginTitle">Admin Login</h2>
+    <div class="muted" id="loginHint">Enter your admin password.</div>
+    <form id="loginForm" onsubmit="login(event)">
+      <label>Password</label>
+      <input id="loginPassword" type="password" autocomplete="current-password" required />
+      <div id="confirmWrap" class="hidden">
+        <label>Confirm password</label>
+        <input id="confirmPassword" type="password" autocomplete="new-password" />
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button id="loginBtn" type="submit">Login</button>
+      </div>
+    </form>
+  </div>
 
-    <h3 class="section-title" style="margin-top:0;padding-top:0;border:none">🔑 API Keys</h3>
+  <!-- Main Admin -->
+  <div id="adminPanel" class="grid hidden">
+
     <div class="card">
-      <div id="apiKeysList"></div>
-      <div class="env-notice">
-        ⚠️ Environment variables (set in Railway/hosting) take priority over keys entered here.
+      <h2>Quick Stats</h2>
+      <div class="kpi">
+        <div class="item">
+          <div class="muted">Total Messages</div>
+          <div class="v" id="totalMessages">-</div>
+        </div>
+        <div class="item">
+          <div class="muted">Total Cost</div>
+          <div class="v" id="totalCost">-</div>
+        </div>
+        <div class="item">
+          <div class="muted">Providers</div>
+          <div class="v" id="providerCount">-</div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="row">
+        <button class="danger" onclick="resetStats()">Reset Stats</button>
+        <span class="muted">Clears saved usage cost totals.</span>
       </div>
     </div>
 
-    <div class="grid" style="margin-top:24px">
-      <div class="card">
-        <h2>🔌 Provider Status</h2>
-        <div class="provider-status" id="providerStatus"><div class="provider-badge inactive"><span class="dot"></span>Loading...</div></div>
-      </div>
-      <div class="card">
-        <h2>📊 Usage Overview</h2>
-        <div class="stat-grid">
-          <div class="stat"><div class="stat-label">Total Cost</div><div class="stat-value cost" id="totalCost">$0.00</div></div>
-          <div class="stat"><div class="stat-label">Requests</div><div class="stat-value" id="totalRequests">0</div></div>
-          <div class="stat"><div class="stat-label">Input Tokens</div><div class="stat-value" id="totalInputTokens">0</div></div>
-          <div class="stat"><div class="stat-label">Output Tokens</div><div class="stat-value" id="totalOutputTokens">0</div></div>
-        </div>
-        <div class="button-row"><button class="secondary danger" onclick="resetStats()">Reset Stats</button></div>
-      </div>
-    </div>
-
-    <h3 class="section-title">🤖 Model Configuration</h3>
-    <p class="subtitle">Tap on a model to edit its settings</p>
-    <div class="button-row" style="margin:10px 0 14px 0;justify-content:space-between">
-      <div style="color:var(--text3);font-size:13px" id="modelSyncStatus">Model list: not loaded</div>
-      <button class="secondary" onclick="syncModelOptions()" type="button">Sync model options</button>
-    </div>
-    <div class="grid" id="modelCards"></div>
-
-    <h3 class="section-title">📈 Daily Usage (Last 7 Days)</h3>
     <div class="card">
-      <div class="chart-bar-container" id="dailyChart"></div>
-      <div class="chart-labels" id="chartLabels"></div>
+      <h2>API Keys</h2>
+      <div class="muted">These reflect Railway env vars if set, otherwise stored values.</div>
+      <div class="divider"></div>
+      <div id="keyList"></div>
     </div>
 
-    <h3 class="section-title">📋 Usage by Model</h3>
-    <div class="card"><div id="modelBreakdown"><p style="color:var(--text3)">No usage data yet</p></div></div>
-
-    <h3 class="section-title">🔐 Security</h3>
     <div class="card">
-      <h2>Change Admin Password</h2>
-      <form id="changePasswordForm">
-        <div class="form-group">
-          <label>Current Password</label>
-          <input type="password" id="currentPassword" required>
-        </div>
-        <div class="form-group">
-          <label>New Password</label>
-          <input type="password" id="newPassword" required minlength="6">
-        </div>
-        <button type="submit">Update Password</button>
-      </form>
-    </div>
-  </div>
+      <h2>Model Routing</h2>
+      <div class="muted">Dropdowns let you choose models for fast/full/fallback. No automatic changes unless you save.</div>
 
-  <!-- Edit Model Modal -->
-  <div class="modal" id="editModal">
-    <div class="modal-content">
-      <h3 id="editModalTitle">Edit Model</h3>
-      <form id="editModelForm">
-        <input type="hidden" id="editModelKey">
-        <div class="form-group"><label>Display Name</label><input type="text" id="editDisplayName" required></div>
-        <div class="form-group"><label>Provider</label><select id="editProvider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google</option></select></div>
-        <div class="form-group">
-          <label>Model ID</label>
-          <select id="editModelIdSelect"></select>
-          <input type="text" id="editModelId" required style="margin-top:8px" placeholder="Custom model id">
-          <div style="color:var(--text3);font-size:12px;margin-top:6px">Tip: Pick from the synced list above, or type a custom model id.</div>
-        </div>
-        <div class="form-group"><label>Description</label><input type="text" id="editDescription"></div>
-        <div class="form-row">
-          <div class="form-group"><label>Input Cost ($/M)</label><input type="number" id="editInputCost" step="0.01" required></div>
-          <div class="form-group"><label>Output Cost ($/M)</label><input type="number" id="editOutputCost" step="0.01" required></div>
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label>Max Output Tokens</label><input type="number" id="editMaxTokens" required></div>
-          <div class="form-group"><label>Context Window</label><input type="number" id="editContextWindow" required></div>
-        </div>
-        <div class="button-row"><button type="submit">Save</button><button type="button" class="secondary" onclick="closeEditModal()">Cancel</button></div>
-      </form>
-    </div>
-  </div>
+      <label>Fast Model</label>
+      <select id="fastModel"></select>
 
-  <!-- Edit API Key Modal -->
-  <div class="modal" id="apiKeyModal">
-    <div class="modal-content">
-      <h3 id="apiKeyModalTitle">Update API Key</h3>
-      <form id="apiKeyForm">
-        <input type="hidden" id="apiKeyProvider">
-        <div class="form-group">
-          <label id="apiKeyLabel">API Key</label>
-          <input type="password" id="apiKeyInput" placeholder="Enter API key...">
-        </div>
-        <p style="font-size:12px;color:var(--text3);margin-bottom:16px">Leave empty and save to remove the key.</p>
-        <div class="button-row">
-          <button type="submit">Save</button>
-          <button type="button" class="secondary" onclick="closeApiKeyModal()">Cancel</button>
-        </div>
-      </form>
-    </div>
-  </div>
+      <label>Full Model</label>
+      <select id="fullModel"></select>
 
-  <div class="toast" id="toast"></div>
+      <label>Fallback Model</label>
+      <select id="fallbackModel"></select>
+
+      <div class="row" style="margin-top:12px">
+        <button onclick="saveConfig()">Save</button>
+        <button class="secondary" onclick="syncModels()">Sync Model Options</button>
+      </div>
+      <div class="muted" style="margin-top:8px">Sync adds options to the list, it does not change your selected models.</div>
+    </div>
+
+    <div class="card">
+      <h2>System Prompt</h2>
+      <div class="muted">Edits apply to the assistant across providers.</div>
+      <label>Prompt</label>
+      <textarea id="systemPrompt"></textarea>
+      <div class="row" style="margin-top:12px">
+        <button onclick="saveConfig()">Save</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Cost Guardrails</h2>
+      <div class="muted">Optional caps to prevent runaway spend.</div>
+
+      <label>Max Cost Per Request (USD)</label>
+      <input id="maxCostPerRequest" type="number" step="0.01" min="0" />
+
+      <label>Max Tokens Per Request</label>
+      <input id="maxTokensPerRequest" type="number" step="1" min="0" />
+
+      <div class="row" style="margin-top:12px">
+        <button onclick="saveConfig()">Save</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
 
 <script>
-let config=null,stats=null,apiKeys={},modelOptions={},sessionToken=localStorage.getItem('adminSession');
+const SESSION_KEY='adminSession';
+let config=null,stats=null,apiKeys={},modelOptions={},sessionToken=localStorage.getItem(SESSION_KEY);
+
 const providerNames={openai:'OpenAI',anthropic:'Anthropic',google:'Google',github:'GitHub'};
+function showToast(msg,type='ok'){
+  const t=document.getElementById('toast');
+  const color=type==='error'?'bad':(type==='warn'?'warn':'ok');
+  t.innerHTML=`<b class="badge">${type.toUpperCase()}</b> ${msg}`;
+  t.className='toast show';
+  setTimeout(()=>t.className='toast',3400);
+}
+function fmtMoney(n){try{return '$'+Number(n).toFixed(4)}catch{return '$0.0000'}}
+function fmtInt(n){if(n==null)return '-';n=Number(n);if(n>1e6)return (n/1e6).toFixed(2)+'M';if(n>1e3)return (n/1e3).toFixed(1)+'K';return n.toString()}
 
-function showToast(m,t='success'){const e=document.getElementById('toast');e.textContent=m;e.className=`toast ${t}`;e.style.display='block';setTimeout(()=>e.style.display='none',3000)}
-function fmt(n){if(n>=1e6)return(n/1e6).toFixed(2)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'K';return n.toString()}
-
-function authHeaders(){return sessionToken?{'X-Admin-Session':sessionToken}:{}}
+function authHeaders(){
+  if(!sessionToken) return {};
+  // Send both cases for maximum compatibility with any server/header parsing
+  return {'x-admin-session': sessionToken, 'X-Admin-Session': sessionToken};
+}
 
 async function checkAuth(){
   try{
     const r=await fetch('/api/admin/auth-status',{headers:authHeaders()});
     const d=await r.json();
-    
-    if(d.needsPassword){
+
+    // Support multiple backend response shapes
+    const needsPassword = (d.needsPassword !== undefined)
+      ? d.needsPassword
+      : (d.hasPassword !== undefined ? !d.hasPassword : false);
+
+    const isAuthenticated = (d.isAuthenticated !== undefined)
+      ? d.isAuthenticated
+      : (d.authenticated !== undefined ? d.authenticated : false);
+
+    if(needsPassword){
       showSetupScreen();
-    }else if(!d.isAuthenticated){
+    }else if(!isAuthenticated){
       showLoginScreen();
     }else{
       showAdminPanel();
     }
   }catch(e){
+    showToast('Auth check failed: '+e.message,'error');
     showLoginScreen();
   }
 }
 
 function showSetupScreen(){
-  document.getElementById('loginScreen').classList.remove('hidden');
-  document.getElementById('adminPanel').classList.add('hidden');
-  document.getElementById('loginMessage').textContent='Create an admin password';
-  document.getElementById('passwordLabel').textContent='New Password';
-  document.getElementById('confirmPasswordGroup').classList.remove('hidden');
-  document.getElementById('loginBtn').textContent='Create Password';
+  document.getElementById('loginTitle').textContent='Set Admin Password';
+  document.getElementById('loginHint').textContent='Create a new admin password to secure settings.';
+  document.getElementById('confirmWrap').classList.remove('hidden');
   document.getElementById('loginForm').onsubmit=setupPassword;
-}
-
-function showLoginScreen(){
   document.getElementById('loginScreen').classList.remove('hidden');
   document.getElementById('adminPanel').classList.add('hidden');
-  document.getElementById('loginMessage').textContent='Enter your admin password';
-  document.getElementById('passwordLabel').textContent='Password';
-  document.getElementById('confirmPasswordGroup').classList.add('hidden');
-  document.getElementById('loginBtn').textContent='Login';
-  document.getElementById('loginForm').onsubmit=login;
+  document.getElementById('logoutBtn').classList.add('hidden');
 }
-
+function showLoginScreen(){
+  document.getElementById('loginTitle').textContent='Admin Login';
+  document.getElementById('loginHint').textContent='Enter your admin password.';
+  document.getElementById('confirmWrap').classList.add('hidden');
+  document.getElementById('loginForm').onsubmit=login;
+  document.getElementById('loginScreen').classList.remove('hidden');
+  document.getElementById('adminPanel').classList.add('hidden');
+  document.getElementById('logoutBtn').classList.add('hidden');
+}
 function showAdminPanel(){
   document.getElementById('loginScreen').classList.add('hidden');
   document.getElementById('adminPanel').classList.remove('hidden');
+  document.getElementById('logoutBtn').classList.remove('hidden');
   loadAll();
 }
 
@@ -288,7 +242,7 @@ async function setupPassword(e){
   const pw=document.getElementById('loginPassword').value;
   const confirm=document.getElementById('confirmPassword').value;
   if(pw!==confirm){showToast('Passwords do not match','error');return}
-  
+
   try{
     const r=await fetch('/api/admin/setup-password',{
       method:'POST',
@@ -297,8 +251,11 @@ async function setupPassword(e){
     });
     const d=await r.json();
     if(d.error)throw new Error(d.error);
-    sessionToken=d.sessionToken;
-    localStorage.setItem('adminSession',sessionToken);
+
+    sessionToken=(d.sessionToken||d.token);
+    if(!sessionToken) throw new Error('Password set but no session token returned');
+
+    localStorage.setItem(SESSION_KEY,sessionToken);
     showAdminPanel();
     showToast('Password created!');
   }catch(e){showToast(e.message,'error')}
@@ -307,7 +264,7 @@ async function setupPassword(e){
 async function login(e){
   e.preventDefault();
   const pw=document.getElementById('loginPassword').value;
-  
+
   try{
     const r=await fetch('/api/admin/login',{
       method:'POST',
@@ -316,8 +273,11 @@ async function login(e){
     });
     const d=await r.json();
     if(d.error)throw new Error(d.error);
-    sessionToken=d.sessionToken;
-    localStorage.setItem('adminSession',sessionToken);
+
+    sessionToken=(d.sessionToken||d.token);
+    if(!sessionToken) throw new Error('Login succeeded but no session token returned');
+
+    localStorage.setItem(SESSION_KEY,sessionToken);
     showAdminPanel();
     showToast('Logged in!');
   }catch(e){showToast(e.message,'error')}
@@ -326,305 +286,190 @@ async function login(e){
 async function logout(){
   await fetch('/api/admin/logout',{method:'POST',headers:authHeaders()});
   sessionToken=null;
-  localStorage.removeItem('adminSession');
+  localStorage.removeItem(SESSION_KEY);
   showLoginScreen();
 }
 
 async function loadAll(){
   await Promise.all([loadConfig(),loadStats(),loadApiKeys(),loadModelOptions()]);
+  populateConfigUI();
+  renderKeys();
+  renderModelDropdowns();
+  updateModelSyncStatus();
+}
+
+async function loadConfig(){
+  const r=await fetch('/api/config',{headers:authHeaders()});
+  if(!r.ok) throw new Error('Failed to load config');
+  config=await r.json();
+}
+
+async function loadStats(){
+  const r=await fetch('/api/stats',{headers:authHeaders()});
+  if(!r.ok) throw new Error('Failed to load stats');
+  stats=await r.json();
+  document.getElementById('totalMessages').textContent=fmtInt(stats.totalMessages||0);
+  document.getElementById('totalCost').textContent=fmtMoney(stats.totalCost||0);
+  document.getElementById('providerCount').textContent=Object.keys(stats.byProvider||{}).length;
+}
+
+async function loadApiKeys(){
+  const r=await fetch('/api/admin/api-keys',{headers:authHeaders()});
+  if(r.status===401) throw new Error('Unauthorized');
+  apiKeys=await r.json();
 }
 
 async function loadModelOptions(){
-  try{
-    const r=await fetch('/api/model-options',{headers:authHeaders()});
-    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed');}
-    modelOptions=await r.json();
-    updateModelSyncStatus();
-  }catch(e){
-    console.error(e);
-    document.getElementById('modelSyncStatus').textContent='Model list: unavailable';
+  const r=await fetch('/api/model-options',{headers:authHeaders()});
+  if(r.status===401) throw new Error('Unauthorized');
+  modelOptions=await r.json();
+}
+
+function populateConfigUI(){
+  if(!config) return;
+  document.getElementById('systemPrompt').value=config.systemPrompt||'';
+  document.getElementById('maxCostPerRequest').value=(config.guardrails && config.guardrails.maxCostPerRequest!=null) ? config.guardrails.maxCostPerRequest : '';
+  document.getElementById('maxTokensPerRequest').value=(config.guardrails && config.guardrails.maxTokensPerRequest!=null) ? config.guardrails.maxTokensPerRequest : '';
+}
+
+function renderKeys(){
+  const wrap=document.getElementById('keyList');
+  wrap.innerHTML='';
+  const providers=['openai','anthropic','google','github'];
+  providers.forEach(p=>{
+    const meta=apiKeys[p]||{};
+    const row=document.createElement('div');
+    row.className='row';
+    row.innerHTML=`
+      <div class="auto">
+        <span class="badge">${providerNames[p]||p}</span>
+      </div>
+      <div>
+        <div class="muted">${meta.masked||'(not set)'}</div>
+      </div>
+    `;
+    wrap.appendChild(row);
+  });
+}
+
+function allModelOptions(){
+  // Expecting response: { modelOptions: { openai:[], anthropic:[], google:[] }, lastSyncAt }
+  const mo=(modelOptions && (modelOptions.modelOptions||modelOptions)) || {};
+  return {
+    openai: mo.openai || [],
+    anthropic: mo.anthropic || [],
+    google: mo.google || []
+  };
+}
+
+function renderModelDropdowns(){
+  const mo=allModelOptions();
+  const fast=document.getElementById('fastModel');
+  const full=document.getElementById('fullModel');
+  const fallback=document.getElementById('fallbackModel');
+
+  function fill(sel, list){
+    sel.innerHTML='';
+    (list||[]).forEach(m=>{
+      const opt=document.createElement('option');
+      opt.value=typeof m==='string'?m:m.id||m.model||'';
+      opt.textContent=typeof m==='string'?m:(m.label||m.id||m.model||'');
+      sel.appendChild(opt);
+    });
+  }
+
+  // Flatten: we allow mixing providers in dropdowns by using "provider:model"
+  const combined=[
+    ...mo.openai.map(x=> (typeof x==='string'?`openai:${x}`:`openai:${x.id||x.model}`)),
+    ...mo.anthropic.map(x=> (typeof x==='string'?`anthropic:${x}`:`anthropic:${x.id||x.model}`)),
+    ...mo.google.map(x=> (typeof x==='string'?`google:${x}`:`google:${x.id||x.model}`))
+  ].filter(Boolean);
+
+  fill(fast, combined);
+  fill(full, combined);
+  fill(fallback, combined);
+
+  // Set selected values from config
+  if(config && config.models){
+    if(config.models.fast && config.models.fast.provider && config.models.fast.model){
+      fast.value=`${config.models.fast.provider}:${config.models.fast.model}`;
+    }
+    if(config.models.full && config.models.full.provider && config.models.full.model){
+      full.value=`${config.models.full.provider}:${config.models.full.model}`;
+    }
+    if(config.models.fallback && config.models.fallback.provider && config.models.fallback.model){
+      fallback.value=`${config.models.fallback.provider}:${config.models.fallback.model}`;
+    }
   }
 }
 
 function latestSync(){
-  const dates=Object.values(modelOptions||{}).map(v=>v?.lastSyncedAt).filter(Boolean);
-  if(!dates.length)return null;
-  return dates.sort().slice(-1)[0];
+  // Support either {lastSyncAt} or provider-level timestamps
+  if(modelOptions && modelOptions.lastSyncAt) return modelOptions.lastSyncAt;
+  return null;
 }
 
 function updateModelSyncStatus(){
   const d=latestSync();
-  document.getElementById('modelSyncStatus').textContent = d ? `Model list: last synced ${new Date(d).toLocaleString()}` : 'Model list: not synced yet';
+  document.getElementById('modelSyncStatus').textContent = d ? `Model list synced: ${new Date(d).toLocaleString()}` : 'Model list: not synced yet';
 }
 
-async function syncModelOptions(){
+function parseProviderModel(v){
+  const [provider,...rest]=String(v||'').split(':');
+  return {provider, model: rest.join(':')};
+}
+
+async function saveConfig(){
   try{
-    const r=await fetch('/api/model-options/sync',{method:'POST',headers:{...authHeaders()}});
-    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed');}
+    const fast=parseProviderModel(document.getElementById('fastModel').value);
+    const full=parseProviderModel(document.getElementById('fullModel').value);
+    const fallback=parseProviderModel(document.getElementById('fallbackModel').value);
+
+    config=config||{};
+    config.systemPrompt=document.getElementById('systemPrompt').value||'';
+    config.models=config.models||{};
+    config.models.fast={provider: fast.provider, model: fast.model};
+    config.models.full={provider: full.provider, model: full.model};
+    config.models.fallback={provider: fallback.provider, model: fallback.model};
+
+    config.guardrails=config.guardrails||{};
+    const mc=document.getElementById('maxCostPerRequest').value;
+    const mt=document.getElementById('maxTokensPerRequest').value;
+    config.guardrails.maxCostPerRequest = mc==='' ? null : Number(mc);
+    config.guardrails.maxTokensPerRequest = mt==='' ? null : Number(mt);
+
+    const r=await fetch('/api/config',{
+      method:'POST',
+      headers:{'Content-Type':'application/json',...authHeaders()},
+      body:JSON.stringify(config)
+    });
     const d=await r.json();
-    if(d.error)throw new Error(d.error);
-    modelOptions=d.modelOptions||{};
-    updateModelSyncStatus();
-    showToast('Model options synced');
+    if(!r.ok) throw new Error(d.error||'Save failed');
+    showToast('Saved config!');
   }catch(e){showToast(e.message,'error')}
 }
 
-function populateModelIdSelect(provider,current){
-  const sel=document.getElementById('editModelIdSelect');
-  const list=(modelOptions?.[provider]?.models)||[];
-  const options=[{id:'__custom__',displayName:'Custom (type below)'}].concat(list);
-  sel.innerHTML=options.map(o=>`<option value="${o.id}">${o.displayName||o.id}</option>`).join('');
-  // If current model exists in list, select it, otherwise custom
-  const hasCurrent=list.some(m=>m.id===current);
-  sel.value=hasCurrent?current:'__custom__';
-  // If selected is a real model, reflect in input
-  document.getElementById('editModelId').value=current||'';
-}
-
-document.getElementById('editModelIdSelect').addEventListener('change',()=>{
-  const v=document.getElementById('editModelIdSelect').value;
-  if(v&&v!=='__custom__')document.getElementById('editModelId').value=v;
-});
-
-document.getElementById('editProvider').addEventListener('change',()=>{
-  const provider=document.getElementById('editProvider').value;
-  populateModelIdSelect(provider,document.getElementById('editModelId').value);
-});
-
-async function loadConfig(){
-  config=await(await fetch('/api/config')).json();
-  renderProviderStatus();
-  renderModelCards();
-}
-
-async function loadStats(){
-  stats=await(await fetch('/api/stats')).json();
-  renderStats();
-  renderDailyChart();
-  renderModelBreakdown();
-}
-
-async function loadApiKeys(){
+async function syncModels(){
   try{
-    const r=await fetch('/api/admin/api-keys',{headers:authHeaders()});
-    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
-    const d=await r.json();
-    apiKeys=d.keys;
-    renderApiKeys();
-  }catch(e){console.error(e)}
-}
-
-async function loadModelOptions(){
-  try{
-    const r=await fetch('/api/model-options',{headers:authHeaders()});
-    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
-    modelOptions=await r.json();
-    const statusEl=document.getElementById('modelSyncStatus');
-    const providers=Object.keys(modelOptions||{});
-    const last=providers.map(p=>modelOptions[p]?.lastSyncedAt).filter(Boolean).sort().pop();
-    statusEl.textContent=last?`Model list last synced: ${new Date(last).toLocaleString()}`:'Model list: not synced yet';
-  }catch(e){
-    console.error(e);
-    document.getElementById('modelSyncStatus').textContent='Model list: unavailable';
-  }
-}
-
-async function syncModelOptions(){
-  try{
-    const b=document.querySelector('button[onclick="syncModelOptions()"]');
-    if(b){b.disabled=true;b.textContent='Syncing...'}
     const r=await fetch('/api/model-options/sync',{method:'POST',headers:authHeaders()});
-    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
     const d=await r.json();
-    if(d.error)throw new Error(d.error);
-    modelOptions=d.modelOptions||{};
+    if(!r.ok) throw new Error(d.error||'Sync failed');
     await loadModelOptions();
-    showToast('Model options synced');
-  }catch(e){showToast(e.message,'error')}
-  finally{
-    const b=document.querySelector('button[onclick="syncModelOptions()"]');
-    if(b){b.disabled=false;b.textContent='Sync model options'}
-  }
-}
-
-function populateModelSelect(provider,current){
-  const sel=document.getElementById('editModelIdSelect');
-  if(!sel)return;
-  const list=(modelOptions?.[provider]?.models)||[];
-  const opts=[{id:'__custom__',displayName:'Custom...'},...list];
-  sel.innerHTML=opts.map(m=>`<option value="${m.id}">${m.displayName||m.id}</option>`).join('');
-  // If current is in list, select it; else choose Custom...
-  const has=list.some(m=>m.id===current);
-  sel.value=has?current:'__custom__';
-}
-
-document.getElementById('editModelIdSelect').addEventListener('change',()=>{
-  const v=document.getElementById('editModelIdSelect').value;
-  if(v && v!=='__custom__') document.getElementById('editModelId').value=v;
-});
-
-document.getElementById('editProvider').addEventListener('change',()=>{
-  const p=document.getElementById('editProvider').value;
-  const current=document.getElementById('editModelId').value;
-  populateModelSelect(p,current);
-});
-
-function renderApiKeys(){
-  const c=document.getElementById('apiKeysList');
-  c.innerHTML=['openai','anthropic','google','github'].map(p=>{
-    const k=apiKeys[p]||{};
-    return `<div class="api-key-row">
-      <div class="api-key-info">
-        <div class="api-key-name">${providerNames[p]}${k.source?`<span class="api-key-source ${k.source}">${k.source==='env'?'ENV VAR':'CONFIG'}</span>`:''}</div>
-        <div class="api-key-value">${k.masked||'Not set'}</div>
-      </div>
-      <div class="api-key-status ${k.isSet&&k.connected?'connected':'disconnected'}">
-        <span class="dot"></span>${k.isSet?(k.connected?'Connected':'Error'):'Missing'}
-      </div>
-      <div class="api-key-actions">
-        <button onclick="openApiKeyModal('${p}')">${k.isSet&&k.source==='config'?'Update':'Add'}</button>
-        ${k.isSet&&k.source==='config'?`<button class="danger" onclick="deleteApiKey('${p}')">Remove</button>`:''}
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function openApiKeyModal(provider){
-  document.getElementById('apiKeyProvider').value=provider;
-  document.getElementById('apiKeyModalTitle').textContent=`${providerNames[provider]} API Key`;
-  document.getElementById('apiKeyLabel').textContent=provider==='github'?'Personal Access Token':'API Key';
-  document.getElementById('apiKeyInput').value='';
-  document.getElementById('apiKeyModal').classList.add('active');
-}
-
-function closeApiKeyModal(){document.getElementById('apiKeyModal').classList.remove('active')}
-
-document.getElementById('apiKeyForm').addEventListener('submit',async e=>{
-  e.preventDefault();
-  const provider=document.getElementById('apiKeyProvider').value;
-  const key=document.getElementById('apiKeyInput').value;
-  
-  try{
-    const r=await fetch('/api/admin/api-keys',{
-      method:'POST',
-      headers:{'Content-Type':'application/json',...authHeaders()},
-      body:JSON.stringify({provider,key})
-    });
-    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
-    const d=await r.json();
-    if(d.error)throw new Error(d.error);
-    closeApiKeyModal();
-    showToast(key?'API key saved!':'API key removed!');
-    await loadApiKeys();
-    await loadConfig();
-  }catch(e){showToast(e.message,'error')}
-});
-
-async function deleteApiKey(provider){
-  if(!confirm(`Remove ${providerNames[provider]} API key?`))return;
-  try{
-    const r=await fetch(`/api/admin/api-keys/${provider}`,{method:'DELETE',headers:authHeaders()});
-    if(!r.ok)throw new Error('Failed');
-    showToast('API key removed');
-    await loadApiKeys();
-    await loadConfig();
+    renderModelDropdowns();
+    updateModelSyncStatus();
+    showToast('Model options synced!');
   }catch(e){showToast(e.message,'error')}
 }
-
-function renderProviderStatus(){
-  document.getElementById('providerStatus').innerHTML=[['openai','OpenAI'],['anthropic','Anthropic'],['google','Google']].map(([k,n])=>`<div class="provider-badge ${config.providers[k]?'active':'inactive'}"><span class="dot"></span>${n}</div>`).join('');
-}
-
-function renderModelCards(){
-  document.getElementById('modelCards').innerHTML=Object.entries(config.models).map(([k,m])=>`<div class="card" style="cursor:pointer" onclick="openEditModal('${k}')"><div class="model-card"><div class="model-header"><span class="model-name">${m.displayName}</span><span class="model-badge ${k}">${k}</span></div><div class="model-details"><div class="model-detail"><span class="label">Provider</span><span class="value">${m.provider}</span></div><div class="model-detail"><span class="label">Model</span><span class="value">${m.model}</span></div><div class="model-detail"><span class="label">Input</span><span class="value">$${m.inputCost}/M</span></div><div class="model-detail"><span class="label">Output</span><span class="value">$${m.outputCost}/M</span></div></div></div></div>`).join('');
-}
-
-function renderStats(){
-  document.getElementById('totalCost').textContent='$'+(stats.totalCost||0).toFixed(4);
-  document.getElementById('totalRequests').textContent=fmt(stats.requestCount||0);
-  document.getElementById('totalInputTokens').textContent=fmt(stats.totalInputTokens||0);
-  document.getElementById('totalOutputTokens').textContent=fmt(stats.totalOutputTokens||0);
-}
-
-function renderDailyChart(){
-  const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(d.toISOString().split('T')[0])}
-  const costs=days.map(d=>stats.dailyStats?.[d]?.cost||0);
-  const max=Math.max(...costs,0.01);
-  document.getElementById('dailyChart').innerHTML=days.map((d,i)=>`<div class="chart-bar" style="height:${Math.max((costs[i]/max)*100,4)}%" title="${d}: $${costs[i].toFixed(4)}"></div>`).join('');
-  document.getElementById('chartLabels').innerHTML=`<span>${days[0].slice(5)}</span><span>${days[6].slice(5)}</span>`;
-}
-
-function renderModelBreakdown(){
-  const c=document.getElementById('modelBreakdown');
-  if(!stats.byModel||!Object.keys(stats.byModel).length){c.innerHTML='<p style="color:var(--text3)">No usage data yet</p>';return}
-  c.innerHTML=Object.entries(stats.byModel).map(([k,d])=>`<div class="breakdown-row"><div class="breakdown-name">${k}</div><div class="breakdown-stats"><div class="breakdown-stat"><div class="label">Reqs</div><div>${d.requests}</div></div><div class="breakdown-stat"><div class="label">Tokens</div><div>${fmt(d.inputTokens+d.outputTokens)}</div></div><div class="breakdown-stat"><div class="label">Cost</div><div>$${d.cost.toFixed(4)}</div></div></div></div>`).join('');
-}
-
-function openEditModal(k){
-  const m=config.models[k];if(!m)return;
-  document.getElementById('editModelKey').value=k;
-  document.getElementById('editModalTitle').textContent=`Edit ${m.displayName}`;
-  document.getElementById('editDisplayName').value=m.displayName;
-  document.getElementById('editProvider').value=m.provider;
-  document.getElementById('editModelId').value=m.model;
-  populateModelIdSelect(m.provider,m.model);
-  document.getElementById('editDescription').value=m.description||'';
-  document.getElementById('editInputCost').value=m.inputCost;
-  document.getElementById('editOutputCost').value=m.outputCost;
-  document.getElementById('editMaxTokens').value=m.maxOutputTokens;
-  document.getElementById('editContextWindow').value=m.contextWindow;
-  document.getElementById('editModal').classList.add('active');
-}
-function closeEditModal(){document.getElementById('editModal').classList.remove('active')}
-
-document.getElementById('editModelForm').addEventListener('submit',async e=>{
-  e.preventDefault();
-  const k=document.getElementById('editModelKey').value;
-  const u={displayName:document.getElementById('editDisplayName').value,provider:document.getElementById('editProvider').value,model:document.getElementById('editModelId').value,description:document.getElementById('editDescription').value,inputCost:parseFloat(document.getElementById('editInputCost').value),outputCost:parseFloat(document.getElementById('editOutputCost').value),maxOutputTokens:parseInt(document.getElementById('editMaxTokens').value),contextWindow:parseInt(document.getElementById('editContextWindow').value)};
-  try{
-    const r=await fetch('/api/config/models',{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({modelKey:k,updates:u})});
-    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
-    const d=await r.json();
-    if(d.error)throw new Error(d.error);
-    config.models[k]=d.model;
-    renderModelCards();
-    closeEditModal();
-    showToast('Model updated!');
-  }catch(e){showToast(e.message,'error')}
-});
-
-document.getElementById('changePasswordForm').addEventListener('submit',async e=>{
-  e.preventDefault();
-  const current=document.getElementById('currentPassword').value;
-  const newPw=document.getElementById('newPassword').value;
-  
-  try{
-    const r=await fetch('/api/admin/change-password',{
-      method:'POST',
-      headers:{'Content-Type':'application/json',...authHeaders()},
-      body:JSON.stringify({currentPassword:current,newPassword:newPw})
-    });
-    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
-    const d=await r.json();
-    if(d.error)throw new Error(d.error);
-    document.getElementById('currentPassword').value='';
-    document.getElementById('newPassword').value='';
-    showToast('Password updated!');
-  }catch(e){showToast(e.message,'error')}
-});
 
 async function resetStats(){
-  if(!confirm('Reset all stats?'))return;
   try{
     const r=await fetch('/api/stats/reset',{method:'POST',headers:authHeaders()});
-    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||'Reset failed');
     await loadStats();
     showToast('Stats reset!');
-  }catch(e){showToast('Failed','error')}
+  }catch(e){showToast(e.message,'error')}
 }
-
-document.getElementById('editModal').addEventListener('click',e=>{if(e.target===document.getElementById('editModal'))closeEditModal()});
-document.getElementById('apiKeyModal').addEventListener('click',e=>{if(e.target===document.getElementById('apiKeyModal'))closeApiKeyModal()});
 
 checkAuth();
 </script>
