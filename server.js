@@ -413,6 +413,55 @@ app.get("/api/model-options", requireAuth, async (req, res) => {
   }
 });
 
+// Model routing endpoints (fast/full/fallback selection)
+app.get("/api/admin/model-routing", requireAuth, async (req, res) => {
+  try {
+    const cfg = await loadConfig();
+    const models = cfg.models || {};
+    res.json({
+      fast: models.fast ? `${models.fast.provider}:${models.fast.model}` : '',
+      full: models.full ? `${models.full.provider}:${models.full.model}` : '',
+      fallback: models.fallback ? `${models.fallback.provider}:${models.fallback.model}` : ''
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/admin/model-routing", requireAuth, async (req, res) => {
+  try {
+    const { fast, full, fallback } = req.body || {};
+    const cfg = await loadConfig();
+    
+    // Parse provider:model format
+    const parseModel = (str) => {
+      if (!str) return null;
+      const [provider, model] = String(str).split(':');
+      return provider && model ? { provider, model } : null;
+    };
+
+    cfg.models = cfg.models || {};
+    if (fast) {
+      const parsed = parseModel(fast);
+      if (parsed) cfg.models.fast = { ...parsed, maxOutputTokens: cfg.models.fast?.maxOutputTokens || 1024 };
+    }
+    if (full) {
+      const parsed = parseModel(full);
+      if (parsed) cfg.models.full = { ...parsed, maxOutputTokens: cfg.models.full?.maxOutputTokens || 2048 };
+    }
+    if (fallback) {
+      const parsed = parseModel(fallback);
+      if (parsed) cfg.models.fallback = { ...parsed, maxOutputTokens: cfg.models.fallback?.maxOutputTokens || 2048 };
+    }
+
+    await saveConfig(cfg);
+    res.json({ ok: true, models: cfg.models });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
 // Minimal sync: adds a few known models to the list and timestamps.
 // You can extend this later to call providers' "list models" APIs.
 app.post("/api/model-options/sync", requireAuth, async (req, res) => {
