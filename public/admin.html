@@ -634,7 +634,7 @@ async function loadStats(){
 
 async function resetStats(){
   try{
-    const r=await authedFetch('/api/admin/reset-stats',{method:'POST'});
+    const r=await authedFetch('/api/stats/reset',{method:'POST'});
     const d=await r.json();
     if(d.error) throw new Error(d.error);
     showToast('Stats reset!');
