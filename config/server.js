@@ -113,6 +113,94 @@ function maskKey(key) {
   return "••••••••••••" + key.slice(-4);
 }
 
+
+// ---- Model catalog (for costs + recommended coding models) ----
+// Costs are per 1M tokens unless provider uses MTok tiers. For tiered pricing,
+// we store the common/entry tier and surface notes in the UI.
+const MODEL_CATALOG = {
+  openai: {
+    // Coding-focused
+    "gpt-5.2": { displayName: "GPT-5.2", inputCost: 1.75, outputCost: 14.0, tags: ["coding","best"], expensive: true },
+    "gpt-5.2-pro": { displayName: "GPT-5.2 Pro", inputCost: 21.0, outputCost: 168.0, tags: ["coding","top"], expensive: true },
+    // Older fallback example
+    "gpt-4.1": { displayName: "GPT-4.1", inputCost: 2.0, outputCost: 8.0, tags: ["coding"], expensive: true }
+  },
+  google: {
+    "gemini-3-flash-preview": { displayName: "Gemini 3 Flash (Preview)", inputCost: 1.25, outputCost: 10.0, tags: ["coding","fast"], expensive: false, notes: "Pricing shown is standard tier for <=200k tokens." },
+    "gemini-3-pro-preview": { displayName: "Gemini 3 Pro (Preview)", inputCost: 3.0, outputCost: 15.0, tags: ["coding","top"], expensive: true, notes: "Pricing shown is standard tier for <=200k tokens." }
+  },
+  anthropic: {
+    "claude-sonnet-4-5": { displayName: "Claude Sonnet 4.5", inputCost: 3.0, outputCost: 15.0, tags: ["coding","fallback"], expensive: true },
+    "claude-opus-4-5": { displayName: "Claude Opus 4.5", inputCost: 5.0, outputCost: 25.0, tags: ["coding","top"], expensive: true },
+    "claude-haiku-4-5": { displayName: "Claude Haiku 4.5", inputCost: 1.0, outputCost: 5.0, tags: ["coding","fast"], expensive: false }
+  }
+};
+
+function normalizeModelId(provider, rawId) {
+  if (!rawId) return null;
+  if (provider === "google") {
+    // Google list endpoint returns names like "models/gemini-3-flash-preview"
+    return String(rawId).replace(/^models\//, "").trim();
+  }
+  return String(rawId).trim();
+}
+
+function modelMeta(provider, id) {
+  return (MODEL_CATALOG[provider] && MODEL_CATALOG[provider][id]) || null;
+}
+
+function buildModelOptions(config, { includeExpensive = false } = {}) {
+  const out = [];
+  const seen = new Set();
+
+  // 1) Always include catalog models
+  for (const [prov, models] of Object.entries(MODEL_CATALOG)) {
+    for (const [id, meta] of Object.entries(models)) {
+      const key = `${prov}:${id}`;
+      if (seen.has(key)) continue;
+      if (!includeExpensive && meta.expensive) continue;
+      out.push({ provider: prov, model: id, ...meta });
+      seen.add(key);
+    }
+  }
+
+  // 2) Add discovered models (no pricing unless in catalog)
+  const discovered = config.modelOptions || {};
+  for (const [prov, bucket] of Object.entries(discovered)) {
+    for (const m of (bucket.models || [])) {
+      const id = normalizeModelId(prov, m.id || m.model || m.name);
+      if (!id) continue;
+      const key = `${prov}:${id}`;
+      if (seen.has(key)) continue;
+      const meta = modelMeta(prov, id);
+      if (meta && !includeExpensive && meta.expensive) continue;
+      out.push({
+        provider: prov,
+        model: id,
+        displayName: (m.displayName || m.display_name || (meta && meta.displayName) || id),
+        inputCost: meta ? meta.inputCost : null,
+        outputCost: meta ? meta.outputCost : null,
+        tags: meta ? meta.tags : [],
+        expensive: meta ? !!meta.expensive : false,
+        notes: meta ? meta.notes : undefined
+      });
+      seen.add(key);
+    }
+  }
+
+  // Sort: coding first, then cheaper first
+  out.sort((a,b)=>{
+    const ac = (a.tags||[]).includes('coding') ? 0 : 1;
+    const bc = (b.tags||[]).includes('coding') ? 0 : 1;
+    if (ac!==bc) return ac-bc;
+    const ap = (a.inputCost==null? 9999 : a.inputCost) + (a.outputCost==null? 9999 : a.outputCost);
+    const bp = (b.inputCost==null? 9999 : b.inputCost) + (b.outputCost==null? 9999 : b.outputCost);
+    return ap-bp;
+  });
+
+  return out;
+}
+
 async function requireAdminAuth(req, res, next) {
   const secrets = await loadSecrets();
   if (!secrets.adminPassword) return next();
@@ -473,6 +561,34 @@ app.delete("/api/admin/api-keys/:provider", requireAdminAuth, async (req, res) =
     await reloadProvidersWithSecrets();
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
+// --- Model options (read) ---
+app.get("/api/model-options", async (req, res) => {
+  try {
+    const config = await loadConfig();
+    // By default, we only return non-expensive models to avoid accidental upgrades.
+    const includeHidden = (req.query.includeHidden === "1");
+    const options = buildModelOptions(config, { includeHidden });
+    res.json({ ok: true, ...options });
+  } catch (err) {
+    console.error("model-options error", err);
+    res.status(500).json({ ok: false, error: "Failed to load model options" });
+  }
+});
+
+// --- Model options (sync) ---
+app.post("/api/admin/model-options/sync", requireAdminAuth, async (req, res) => {
+  try {
+    const config = await loadConfig();
+    const result = await syncModelOptions(config);
+    await saveConfig(result.config);
+    res.json({ ok: true, ...result.report });
+  } catch (err) {
+    console.error("model-options sync error", err);
+    res.status(500).json({ ok: false, error: "Failed to sync model options" });
+  }
 });
 
 app.get("/api/config", async (req, res) => {
