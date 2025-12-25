@@ -3,37 +3,37 @@
     "fast": {
       "id": "fast",
       "provider": "google",
-      "model": "gemini-2.0-flash",
-      "displayName": "Gemini 2.0 Flash",
+      "model": "gemini-3-flash-preview",
+      "displayName": "Gemini 3 Flash (Preview)",
       "description": "Fast responses for simple questions",
-      "inputCost": 0.10,
-      "outputCost": 0.40,
-      "maxOutputTokens": 8192,
-      "contextWindow": 1000000,
+      "inputCost": 0.50,
+      "outputCost": 3.00,
+      "maxOutputTokens": 65536,
+      "contextWindow": 1048576,
       "enabled": true
     },
     "full": {
       "id": "full",
-      "provider": "anthropic",
-      "model": "claude-sonnet-4-20250514",
-      "displayName": "Claude Sonnet 4",
+      "provider": "openai",
+      "model": "gpt-5.2",
+      "displayName": "GPT-5.2",
       "description": "Best coding model for complex tasks",
-      "inputCost": 3.00,
-      "outputCost": 15.00,
-      "maxOutputTokens": 64000,
-      "contextWindow": 200000,
+      "inputCost": 1.75,
+      "outputCost": 14.00,
+      "maxOutputTokens": 128000,
+      "contextWindow": 400000,
       "enabled": true
     },
     "fallback": {
       "id": "fallback",
-      "provider": "openai",
-      "model": "gpt-4o",
-      "displayName": "GPT-4o",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "displayName": "Claude Sonnet 4.5",
       "description": "Alternative for second opinions",
-      "inputCost": 2.50,
-      "outputCost": 10.00,
-      "maxOutputTokens": 16384,
-      "contextWindow": 128000,
+      "inputCost": 3.00,
+      "outputCost": 15.00,
+      "maxOutputTokens": 64000,
+      "contextWindow": 200000,
       "enabled": true
     }
   },
@@ -117,5 +117,11 @@
       "description": "HTML/CSS/JS, good for simple sites",
       "useCase": ["landing page", "portfolio", "simple site"]
     }
+  }
+
+  ,"modelOptions": {
+    "google": {"lastSyncedAt": null, "models": []},
+    "openai": {"lastSyncedAt": null, "models": []},
+    "anthropic": {"lastSyncedAt": null, "models": []}
   }
 }

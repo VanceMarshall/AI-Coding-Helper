@@ -150,6 +150,10 @@
 
     <h3 class="section-title">🤖 Model Configuration</h3>
     <p class="subtitle">Tap on a model to edit its settings</p>
+    <div class="button-row" style="margin:10px 0 14px 0;justify-content:space-between">
+      <div style="color:var(--text3);font-size:13px" id="modelSyncStatus">Model list: not loaded</div>
+      <button class="secondary" onclick="syncModelOptions()" type="button">Sync model options</button>
+    </div>
     <div class="grid" id="modelCards"></div>
 
     <h3 class="section-title">📈 Daily Usage (Last 7 Days)</h3>
@@ -186,7 +190,12 @@
         <input type="hidden" id="editModelKey">
         <div class="form-group"><label>Display Name</label><input type="text" id="editDisplayName" required></div>
         <div class="form-group"><label>Provider</label><select id="editProvider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google</option></select></div>
-        <div class="form-group"><label>Model ID</label><input type="text" id="editModelId" required></div>
+        <div class="form-group">
+          <label>Model ID</label>
+          <select id="editModelIdSelect"></select>
+          <input type="text" id="editModelId" required style="margin-top:8px" placeholder="Custom model id">
+          <div style="color:var(--text3);font-size:12px;margin-top:6px">Tip: Pick from the synced list above, or type a custom model id.</div>
+        </div>
         <div class="form-group"><label>Description</label><input type="text" id="editDescription"></div>
         <div class="form-row">
           <div class="form-group"><label>Input Cost ($/M)</label><input type="number" id="editInputCost" step="0.01" required></div>
@@ -223,7 +232,7 @@
   <div class="toast" id="toast"></div>
 
 <script>
-let config=null,stats=null,apiKeys={},sessionToken=localStorage.getItem('adminSession');
+let config=null,stats=null,apiKeys={},modelOptions={},sessionToken=localStorage.getItem('adminSession');
 const providerNames={openai:'OpenAI',anthropic:'Anthropic',google:'Google',github:'GitHub'};
 
 function showToast(m,t='success'){const e=document.getElementById('toast');e.textContent=m;e.className=`toast ${t}`;e.style.display='block';setTimeout(()=>e.style.display='none',3000)}
@@ -322,8 +331,65 @@ async function logout(){
 }
 
 async function loadAll(){
-  await Promise.all([loadConfig(),loadStats(),loadApiKeys()]);
+  await Promise.all([loadConfig(),loadStats(),loadApiKeys(),loadModelOptions()]);
 }
+
+async function loadModelOptions(){
+  try{
+    const r=await fetch('/api/model-options',{headers:authHeaders()});
+    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed');}
+    modelOptions=await r.json();
+    updateModelSyncStatus();
+  }catch(e){
+    console.error(e);
+    document.getElementById('modelSyncStatus').textContent='Model list: unavailable';
+  }
+}
+
+function latestSync(){
+  const dates=Object.values(modelOptions||{}).map(v=>v?.lastSyncedAt).filter(Boolean);
+  if(!dates.length)return null;
+  return dates.sort().slice(-1)[0];
+}
+
+function updateModelSyncStatus(){
+  const d=latestSync();
+  document.getElementById('modelSyncStatus').textContent = d ? `Model list: last synced ${new Date(d).toLocaleString()}` : 'Model list: not synced yet';
+}
+
+async function syncModelOptions(){
+  try{
+    const r=await fetch('/api/model-options/sync',{method:'POST',headers:{...authHeaders()}});
+    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed');}
+    const d=await r.json();
+    if(d.error)throw new Error(d.error);
+    modelOptions=d.modelOptions||{};
+    updateModelSyncStatus();
+    showToast('Model options synced');
+  }catch(e){showToast(e.message,'error')}
+}
+
+function populateModelIdSelect(provider,current){
+  const sel=document.getElementById('editModelIdSelect');
+  const list=(modelOptions?.[provider]?.models)||[];
+  const options=[{id:'__custom__',displayName:'Custom (type below)'}].concat(list);
+  sel.innerHTML=options.map(o=>`<option value="${o.id}">${o.displayName||o.id}</option>`).join('');
+  // If current model exists in list, select it, otherwise custom
+  const hasCurrent=list.some(m=>m.id===current);
+  sel.value=hasCurrent?current:'__custom__';
+  // If selected is a real model, reflect in input
+  document.getElementById('editModelId').value=current||'';
+}
+
+document.getElementById('editModelIdSelect').addEventListener('change',()=>{
+  const v=document.getElementById('editModelIdSelect').value;
+  if(v&&v!=='__custom__')document.getElementById('editModelId').value=v;
+});
+
+document.getElementById('editProvider').addEventListener('change',()=>{
+  const provider=document.getElementById('editProvider').value;
+  populateModelIdSelect(provider,document.getElementById('editModelId').value);
+});
 
 async function loadConfig(){
   config=await(await fetch('/api/config')).json();
@@ -347,6 +413,61 @@ async function loadApiKeys(){
     renderApiKeys();
   }catch(e){console.error(e)}
 }
+
+async function loadModelOptions(){
+  try{
+    const r=await fetch('/api/model-options',{headers:authHeaders()});
+    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
+    modelOptions=await r.json();
+    const statusEl=document.getElementById('modelSyncStatus');
+    const providers=Object.keys(modelOptions||{});
+    const last=providers.map(p=>modelOptions[p]?.lastSyncedAt).filter(Boolean).sort().pop();
+    statusEl.textContent=last?`Model list last synced: ${new Date(last).toLocaleString()}`:'Model list: not synced yet';
+  }catch(e){
+    console.error(e);
+    document.getElementById('modelSyncStatus').textContent='Model list: unavailable';
+  }
+}
+
+async function syncModelOptions(){
+  try{
+    const b=document.querySelector('button[onclick="syncModelOptions()"]');
+    if(b){b.disabled=true;b.textContent='Syncing...'}
+    const r=await fetch('/api/model-options/sync',{method:'POST',headers:authHeaders()});
+    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
+    const d=await r.json();
+    if(d.error)throw new Error(d.error);
+    modelOptions=d.modelOptions||{};
+    await loadModelOptions();
+    showToast('Model options synced');
+  }catch(e){showToast(e.message,'error')}
+  finally{
+    const b=document.querySelector('button[onclick="syncModelOptions()"]');
+    if(b){b.disabled=false;b.textContent='Sync model options'}
+  }
+}
+
+function populateModelSelect(provider,current){
+  const sel=document.getElementById('editModelIdSelect');
+  if(!sel)return;
+  const list=(modelOptions?.[provider]?.models)||[];
+  const opts=[{id:'__custom__',displayName:'Custom...'},...list];
+  sel.innerHTML=opts.map(m=>`<option value="${m.id}">${m.displayName||m.id}</option>`).join('');
+  // If current is in list, select it; else choose Custom...
+  const has=list.some(m=>m.id===current);
+  sel.value=has?current:'__custom__';
+}
+
+document.getElementById('editModelIdSelect').addEventListener('change',()=>{
+  const v=document.getElementById('editModelIdSelect').value;
+  if(v && v!=='__custom__') document.getElementById('editModelId').value=v;
+});
+
+document.getElementById('editProvider').addEventListener('change',()=>{
+  const p=document.getElementById('editProvider').value;
+  const current=document.getElementById('editModelId').value;
+  populateModelSelect(p,current);
+});
 
 function renderApiKeys(){
   const c=document.getElementById('apiKeysList');
@@ -446,6 +567,7 @@ function openEditModal(k){
   document.getElementById('editDisplayName').value=m.displayName;
   document.getElementById('editProvider').value=m.provider;
   document.getElementById('editModelId').value=m.model;
+  populateModelIdSelect(m.provider,m.model);
   document.getElementById('editDescription').value=m.description||'';
   document.getElementById('editInputCost').value=m.inputCost;
   document.getElementById('editOutputCost').value=m.outputCost;

@@ -287,22 +287,49 @@ function parseCodeBlocks(content) {
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
-// Admin routes
-app.post("/admin/login", async (req, res) => {
+// ------------------------------
+// Admin + Config APIs (used by /public/admin.html)
+// ------------------------------
+
+app.get("/api/admin/auth-status", async (req, res) => {
+  const secrets = await loadSecrets();
+  const needsPassword = !secrets.adminPassword;
+  if (needsPassword) {
+    return res.json({ needsPassword: true, isAuthenticated: false });
+  }
+  const token = req.headers["x-admin-session"];
+  const session = token ? adminSessions.get(token) : null;
+  const isAuthenticated = !!session && session.expires > Date.now();
+  if (session && session.expires <= Date.now()) adminSessions.delete(token);
+  res.json({ needsPassword: false, isAuthenticated });
+});
+
+app.post("/api/admin/setup-password", async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: "Password required" });
+    const secrets = await loadSecrets();
+    if (secrets.adminPassword) return res.status(400).json({ error: "Password already set" });
+    secrets.adminPassword = password;
+    await saveSecrets(secrets);
+    const sessionToken = generateSessionToken();
+    adminSessions.set(sessionToken, { expires: Date.now() + SESSION_DURATION });
+    res.json({ sessionToken });
+  } catch (err) {
+    console.error("Setup password error:", err);
+    res.status(500).json({ error: "Failed to set password" });
+  }
+});
+
+app.post("/api/admin/login", async (req, res) => {
   try {
     const { password } = req.body;
     if (!password) return res.status(400).json({ error: "Password required" });
     
     const secrets = await loadSecrets();
     if (!secrets.adminPassword) {
-      // First time setup
-      secrets.adminPassword = password;
-      await saveSecrets(secrets);
-      const sessionToken = generateSessionToken();
-      adminSessions.set(sessionToken, { expires: Date.now() + SESSION_DURATION });
-      return res.json({ sessionToken, firstTime: true });
+      return res.status(400).json({ error: "Password not set. Use setup-password first." });
     }
-    
     if (secrets.adminPassword !== password) {
       return res.status(401).json({ error: "Invalid password" });
     }
@@ -316,37 +343,230 @@ app.post("/admin/login", async (req, res) => {
   }
 });
 
-app.get("/admin/stats", requireAdminAuth, async (req, res) => {
+app.post("/api/admin/logout", requireAdminAuth, async (req, res) => {
+  const token = req.headers["x-admin-session"];
+  if (token) adminSessions.delete(token);
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/change-password", requireAdminAuth, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) return res.status(400).json({ error: "Missing fields" });
+    const secrets = await loadSecrets();
+    if (secrets.adminPassword !== currentPassword) return res.status(401).json({ error: "Invalid current password" });
+    secrets.adminPassword = newPassword;
+    await saveSecrets(secrets);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Change password error:", err);
+    res.status(500).json({ error: "Failed to change password" });
+  }
+});
+
+app.get("/api/admin/api-keys", requireAdminAuth, async (req, res) => {
+  try {
+    const secrets = await loadSecrets();
+    const keys = {};
+    for (const provider of ["openai", "anthropic", "google", "github"]) {
+      const { key, source } = await getApiKeyWithFallback(provider);
+      const connected = provider === "github" ? !!key : isProviderAvailable(provider);
+      keys[provider] = {
+        masked: maskKey(key),
+        source,
+        isSet: !!key,
+        connected
+      };
+    }
+    // keep a slot for config-stored keys even if env overrides
+    res.json({ keys, hasConfigKeys: !!Object.keys(secrets.apiKeys || {}).length });
+  } catch (err) {
+    console.error("API keys error:", err);
+    res.status(500).json({ error: "Failed to load api keys" });
+  }
+});
+
+app.post("/api/admin/api-keys", requireAdminAuth, async (req, res) => {
+  try {
+    const { provider, key } = req.body;
+    if (!provider) return res.status(400).json({ error: "Provider required" });
+    const secrets = await loadSecrets();
+    secrets.apiKeys = secrets.apiKeys || {};
+    if (key) secrets.apiKeys[provider] = key;
+    else delete secrets.apiKeys[provider];
+    await saveSecrets(secrets);
+    await reloadProvidersWithSecrets();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Save API key error:", err);
+    res.status(500).json({ error: "Failed to save api key" });
+  }
+});
+
+app.delete("/api/admin/api-keys/:provider", requireAdminAuth, async (req, res) => {
+  try {
+    const { provider } = req.params;
+    const secrets = await loadSecrets();
+    secrets.apiKeys = secrets.apiKeys || {};
+    delete secrets.apiKeys[provider];
+    await saveSecrets(secrets);
+    await reloadProvidersWithSecrets();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Delete API key error:", err);
+    res.status(500).json({ error: "Failed to delete api key" });
+  }
+});
+
+// Update model configuration (admin)
+app.post("/api/config/models", requireAdminAuth, async (req, res) => {
+  try {
+    const { modelKey, updates } = req.body;
+    if (!modelKey || !updates) return res.status(400).json({ error: "Missing modelKey/updates" });
+    const config = await loadConfig();
+    if (!config.models?.[modelKey]) return res.status(404).json({ error: "Model not found" });
+    config.models[modelKey] = { ...config.models[modelKey], ...updates };
+    await saveConfig(config);
+    res.json({ ok: true, model: config.models[modelKey] });
+  } catch (err) {
+    console.error("Update model error:", err);
+    res.status(500).json({ error: "Failed to update model" });
+  }
+});
+
+// ------------------------------
+// Model options syncing (admin dropdowns)
+// - Reads provider model catalogs and MERGES into config.modelOptions
+// - Never changes config.models.* automatically
+// ------------------------------
+
+function normalizeGoogleModelName(name) {
+  if (!name) return null;
+  // Google returns names like "models/gemini-3-flash-preview"
+  return name.startsWith("models/") ? name.slice("models/".length) : name;
+}
+
+async function syncProviderModelOptions(provider, apiKey) {
+  if (!apiKey) return [];
+  if (provider === "openai") {
+    const r = await fetch("https://api.openai.com/v1/models", {
+      headers: { Authorization: `Bearer ${apiKey}` }
+    });
+    if (!r.ok) throw new Error(`OpenAI models.list failed (${r.status})`);
+    const data = await r.json();
+    return (data.data || []).map(m => ({ id: m.id, displayName: m.id }));
+  }
+  if (provider === "anthropic") {
+    const r = await fetch("https://api.anthropic.com/v1/models", {
+      headers: {
+        "anthropic-version": "2023-06-01",
+        "X-Api-Key": apiKey
+      }
+    });
+    if (!r.ok) throw new Error(`Anthropic models.list failed (${r.status})`);
+    const data = await r.json();
+    return (data.data || []).map(m => ({ id: m.id, displayName: m.display_name || m.id }));
+  }
+  if (provider === "google") {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+    if (!r.ok) throw new Error(`Google models.list failed (${r.status})`);
+    const data = await r.json();
+    return (data.models || []).map(m => ({
+      id: normalizeGoogleModelName(m.name),
+      displayName: m.displayName || normalizeGoogleModelName(m.name)
+    })).filter(m => m.id);
+  }
+  return [];
+}
+
+async function mergeModelOptions(config, provider, newModels) {
+  config.modelOptions = config.modelOptions || {};
+  const existing = config.modelOptions[provider]?.models || [];
+  const map = new Map(existing.map(m => [m.id, m]));
+  for (const m of newModels) {
+    if (!m?.id) continue;
+    if (!map.has(m.id)) map.set(m.id, { id: m.id, displayName: m.displayName || m.id });
+  }
+  const merged = Array.from(map.values()).sort((a, b) => a.id.localeCompare(b.id));
+  config.modelOptions[provider] = {
+    lastSyncedAt: new Date().toISOString(),
+    models: merged
+  };
+}
+
+async function syncAllModelOptions({ force = false } = {}) {
+  const config = await loadConfig();
+  const now = Date.now();
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const providers = ["google", "openai", "anthropic"];
+
+  for (const provider of providers) {
+    const last = config.modelOptions?.[provider]?.lastSyncedAt;
+    const lastMs = last ? Date.parse(last) : 0;
+    if (!force && lastMs && (now - lastMs) < WEEK_MS) continue;
+
+    const { key } = await getApiKeyWithFallback(provider);
+    if (!key) continue;
+    try {
+      const models = await syncProviderModelOptions(provider, key);
+      await mergeModelOptions(config, provider, models);
+    } catch (err) {
+      // Don't fail the whole app for a provider catalog error.
+      console.warn(`Model sync failed for ${provider}:`, err.message);
+    }
+  }
+
+  await saveConfig(config);
+  return config.modelOptions || {};
+}
+
+app.get("/api/model-options", requireAdminAuth, async (req, res) => {
   try {
     const config = await loadConfig();
-    const secrets = await loadSecrets();
-    const stats = await readJson(statsPath, { totalCost: 0, totalRequests: 0, totalInputTokens: 0, totalOutputTokens: 0, breakdown: {} });
-    
-    const apiKeys = await Promise.all([
-      { provider: "openai", name: "OpenAI" },
-      { provider: "anthropic", name: "Anthropic" },
-      { provider: "google", name: "Google" },
-      { provider: "github", name: "GitHub" }
-    ].map(async ({ provider, name }) => {
-      const { key, source } = await getApiKeyWithFallback(provider);
-      return {
-        provider,
-        name,
-        maskedKey: maskKey(key),
-        source,
-        connected: !!key
-      };
-    }));
-    
+    res.json(config.modelOptions || {});
+  } catch (err) {
+    console.error("Get model options error:", err);
+    res.status(500).json({ error: "Failed to load model options" });
+  }
+});
+
+app.post("/api/model-options/sync", requireAdminAuth, async (req, res) => {
+  try {
+    const modelOptions = await syncAllModelOptions({ force: true });
+    res.json({ ok: true, modelOptions });
+  } catch (err) {
+    console.error("Sync model options error:", err);
+    res.status(500).json({ error: "Failed to sync model options" });
+  }
+});
+
+app.get("/api/stats", async (req, res) => {
+  try {
+    const raw = await readJson(statsPath, { totalCost: 0, requestCount: 0, totalInputTokens: 0, totalOutputTokens: 0, byModel: {}, dailyStats: {} });
+    // Back-compat for older schema
+    const requestCount = raw.requestCount ?? raw.totalRequests ?? 0;
+    const byModel = raw.byModel ?? raw.breakdown ?? {};
     res.json({
-      providers: await reloadProvidersWithSecrets(),
-      apiKeys,
-      models: config.models,
-      stats
+      totalCost: raw.totalCost || 0,
+      requestCount,
+      totalInputTokens: raw.totalInputTokens || 0,
+      totalOutputTokens: raw.totalOutputTokens || 0,
+      byModel,
+      dailyStats: raw.dailyStats || {}
     });
   } catch (err) {
-    console.error("Stats error:", err);
-    res.status(500).json({ error: "Failed to load stats" });
+    console.error("Stats api error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/stats/reset", requireAdminAuth, async (req, res) => {
+  try {
+    await writeJson(statsPath, { totalCost: 0, requestCount: 0, totalInputTokens: 0, totalOutputTokens: 0, byModel: {}, dailyStats: {} });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Reset stats error:", err);
+    res.status(500).json({ error: "Failed to reset stats" });
   }
 });
 
@@ -595,21 +815,39 @@ If the user is ready to start building/implementing code, you should suggest cre
           conversation.updatedAt = Date.now();
           await writeJson(conversationsPath, conversations);
           
-          // Update stats
-          const stats = await readJson(statsPath, { totalCost: 0, totalRequests: 0, totalInputTokens: 0, totalOutputTokens: 0, breakdown: {} });
+          // Update stats (schema used by admin.html)
+          const stats = await readJson(statsPath, {
+            totalCost: 0,
+            requestCount: 0,
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            byModel: {},
+            dailyStats: {}
+          });
           const cost = calculateCost(selectedModel, chunk.inputTokens, chunk.outputTokens);
-          stats.totalCost += cost;
-          stats.totalRequests += 1;
+          const today = new Date().toISOString().slice(0, 10);
+          stats.totalCost = (stats.totalCost || 0) + cost;
+          stats.requestCount = (stats.requestCount || stats.totalRequests || 0) + 1;
           stats.totalInputTokens += chunk.inputTokens;
           stats.totalOutputTokens += chunk.outputTokens;
           
-          if (!stats.breakdown[selectedModel.id]) {
-            stats.breakdown[selectedModel.id] = { cost: 0, requests: 0, inputTokens: 0, outputTokens: 0 };
+          stats.byModel = stats.byModel || stats.breakdown || {};
+          if (!stats.byModel[selectedModel.id]) {
+            stats.byModel[selectedModel.id] = { cost: 0, requests: 0, inputTokens: 0, outputTokens: 0 };
           }
-          stats.breakdown[selectedModel.id].cost += cost;
-          stats.breakdown[selectedModel.id].requests += 1;
-          stats.breakdown[selectedModel.id].inputTokens += chunk.inputTokens;
-          stats.breakdown[selectedModel.id].outputTokens += chunk.outputTokens;
+          stats.byModel[selectedModel.id].cost += cost;
+          stats.byModel[selectedModel.id].requests += 1;
+          stats.byModel[selectedModel.id].inputTokens += chunk.inputTokens;
+          stats.byModel[selectedModel.id].outputTokens += chunk.outputTokens;
+
+          stats.dailyStats = stats.dailyStats || {};
+          stats.dailyStats[today] = stats.dailyStats[today] || { cost: 0, requests: 0 };
+          stats.dailyStats[today].cost += cost;
+          stats.dailyStats[today].requests += 1;
+
+          // Remove legacy fields if present (keep compatibility if older UIs read them)
+          stats.totalRequests = stats.requestCount;
+          stats.breakdown = stats.byModel;
           
           await writeJson(statsPath, stats);
           
@@ -658,6 +896,14 @@ app.get("/api/route-preview", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// Kick off weekly model catalog sync (best-effort, does not change active models)
+setTimeout(() => {
+  syncAllModelOptions({ force: false }).catch(err => console.warn("Initial model sync failed:", err.message));
+  setInterval(() => {
+    syncAllModelOptions({ force: false }).catch(err => console.warn("Scheduled model sync failed:", err.message));
+  }, 7 * 24 * 60 * 60 * 1000);
+}, 5000);
 
 app.listen(PORT, () => {
   console.log(`🚀 AI Code Helper running on port ${PORT}`);
