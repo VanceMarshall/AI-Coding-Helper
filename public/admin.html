@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Admin - AI Code Helper</title>
 
-  <!-- Fonts (safe to keep, optional) -->
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <style>
@@ -39,40 +38,17 @@
       letter-spacing:.2px;
     }
 
-    .wrap{
-      max-width: 1180px;
-      margin: 0 auto;
-      padding: 28px 18px 60px;
-    }
-    .topbar{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-      margin-bottom:18px;
-    }
-    .brand{
-      display:flex;
-      align-items:center;
-      gap:12px;
-    }
+    .wrap{ max-width: 1180px; margin: 0 auto; padding: 28px 18px 60px; }
+    .topbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+    .brand{ display:flex; align-items:center; gap:12px; }
     .logo{
       width:42px;height:42px;border-radius:14px;
       background: linear-gradient(135deg, rgba(102,170,255,.55), rgba(110,231,255,.35));
       border:1px solid var(--border);
       box-shadow: var(--shadow);
     }
-    h1{
-      font-size:20px;
-      margin:0;
-      font-weight:700;
-      letter-spacing:.3px;
-    }
-    .sub{
-      margin:2px 0 0;
-      color:var(--muted);
-      font-size:13px;
-    }
+    h1{ font-size:20px; margin:0; font-weight:700; letter-spacing:.3px; }
+    .sub{ margin:2px 0 0; color:var(--muted); font-size:13px; }
     .pill{
       font-family:var(--mono);
       font-size:12px;
@@ -82,15 +58,8 @@
       background: rgba(255,255,255,.03);
       color: var(--muted);
     }
-    .grid{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 18px;
-      margin-top: 18px;
-    }
-    @media (max-width: 900px){
-      .grid{ grid-template-columns: 1fr; }
-    }
+    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
+    @media (max-width: 900px){ .grid{ grid-template-columns: 1fr; } }
     .card{
       background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
       border:1px solid var(--border);
@@ -107,32 +76,11 @@
       border-bottom:1px solid var(--border);
       background: rgba(0,0,0,.12);
     }
-    .card .head h2{
-      font-size:15px;
-      margin:0;
-      font-weight:700;
-    }
-    .card .head p{
-      margin:4px 0 0;
-      color: var(--muted);
-      font-size: 12.5px;
-      line-height: 1.35;
-    }
-    .card .body{
-      padding: 16px 18px 18px;
-    }
-    .row{
-      display:flex;
-      gap:12px;
-      align-items:center;
-      flex-wrap:wrap;
-    }
-    label{
-      display:block;
-      font-size:12px;
-      color: var(--muted);
-      margin: 10px 0 6px;
-    }
+    .card .head h2{ font-size:15px; margin:0; font-weight:700; }
+    .card .head p{ margin:4px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+    .card .body{ padding: 16px 18px 18px; }
+    .row{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    label{ display:block; font-size:12px; color: var(--muted); margin: 10px 0 6px; }
     input, select, textarea{
       width:100%;
       background: rgba(0,0,0,.25);
@@ -155,52 +103,26 @@
       font-weight: 700;
       transition: transform .05s ease, background .15s ease, border .15s ease;
     }
-    .btn:hover{
-      background: rgba(102,170,255,.24);
-      border-color: rgba(102,170,255,.35);
-    }
+    .btn:hover{ background: rgba(102,170,255,.24); border-color: rgba(102,170,255,.35); }
     .btn:active{ transform: translateY(1px); }
     .btn.primary{
       background: linear-gradient(135deg, rgba(102,170,255,.55), rgba(110,231,255,.30));
       border-color: rgba(102,170,255,.35);
     }
-    .btn.danger{
-      background: rgba(255,90,122,.18);
-      border-color: rgba(255,90,122,.28);
-    }
-    .btn.ghost{
-      background: rgba(255,255,255,.04);
-      border-color: var(--border);
-      color: var(--muted);
-    }
-    .statGrid{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:12px;
-      margin-top:10px;
-    }
+    .btn.danger{ background: rgba(255,90,122,.18); border-color: rgba(255,90,122,.28); }
+    .btn.ghost{ background: rgba(255,255,255,.04); border-color: var(--border); color: var(--muted); }
+
+    .statGrid{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:10px; }
     .stat{
       padding: 12px 14px;
       border-radius: 16px;
       border:1px solid var(--border);
       background: rgba(0,0,0,.18);
     }
-    .stat .k{
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .stat .v{
-      margin-top:4px;
-      font-size: 18px;
-      font-weight: 800;
-      font-family: var(--mono);
-    }
-    .small{
-      font-size:12px;
-      color: var(--muted);
-      margin-top: 10px;
-      line-height: 1.4;
-    }
+    .stat .k{ font-size: 12px; color: var(--muted); }
+    .stat .v{ margin-top:4px; font-size: 18px; font-weight: 800; font-family: var(--mono); }
+    .small{ font-size:12px; color: var(--muted); margin-top: 10px; line-height: 1.4; }
+
     .toast{
       position: fixed;
       right: 14px;
@@ -220,16 +142,11 @@
     .toast .t{ font-weight:800; margin:0 0 4px; }
     .toast .m{ margin:0; color: var(--muted); font-size: 12.5px; }
 
-    /* Views */
     #loginView{ max-width: 520px; margin: 10vh auto 0; padding: 18px; }
     #loginView .card{ overflow: visible; }
     #adminView{ display:none; }
 
-    .split{
-      display:grid;
-      grid-template-columns: 1.2fr .8fr;
-      gap: 14px;
-    }
+    .split{ display:grid; grid-template-columns: 1.2fr .8fr; gap: 14px; }
     @media (max-width: 900px){ .split{ grid-template-columns: 1fr; } }
 
     .kv{
@@ -246,16 +163,11 @@
       min-height: 92px;
     }
 
-    .divider{
-      height:1px;
-      background: var(--border);
-      margin: 12px 0;
-    }
+    .divider{ height:1px; background: var(--border); margin: 12px 0; }
   </style>
 </head>
 <body>
 
-<!-- LOGIN VIEW -->
 <div id="loginView" class="wrap">
   <div class="topbar">
     <div class="brand">
@@ -296,7 +208,6 @@
   </div>
 </div>
 
-<!-- ADMIN VIEW -->
 <div id="adminView" class="wrap">
   <div class="topbar">
     <div class="brand">
@@ -313,7 +224,6 @@
   </div>
 
   <div class="grid">
-    <!-- Quick Stats -->
     <div class="card">
       <div class="head">
         <div>
@@ -348,7 +258,6 @@
       </div>
     </div>
 
-    <!-- API Keys -->
     <div class="card">
       <div class="head">
         <div>
@@ -361,7 +270,6 @@
       </div>
     </div>
 
-    <!-- Model Routing -->
     <div class="card">
       <div class="head">
         <div>
@@ -388,7 +296,6 @@
       </div>
     </div>
 
-    <!-- System Prompt -->
     <div class="card">
       <div class="head">
         <div>
@@ -406,7 +313,6 @@
       </div>
     </div>
 
-    <!-- Cost Guardrails -->
     <div class="card">
       <div class="head">
         <div>
@@ -427,7 +333,6 @@
       </div>
     </div>
 
-    <!-- Sync / Debug -->
     <div class="card">
       <div class="head">
         <div>
@@ -463,13 +368,9 @@
 </div>
 
 <script>
-/* ===========================
-   SESSION + AUTH HELPERS
-=========================== */
 let sessionToken = localStorage.getItem('adminSession') || '';
 
 function authHeaders(){
-  // Send both casings to avoid any proxy/middleware weirdness
   return sessionToken ? {'x-admin-session':sessionToken,'X-Admin-Session':sessionToken} : {};
 }
 
@@ -492,45 +393,36 @@ function logout(){
 }
 
 async function authedFetch(url, opts={}){
-  return fetch(url, {
-    ...opts,
-    headers: { ...(opts.headers||{}), ...authHeaders() }
-  });
+  return fetch(url, { ...opts, headers: { ...(opts.headers||{}), ...authHeaders() } });
 }
 
-/* ===========================
-   AUTH + BOOTSTRAP
-=========================== */
 async function checkAuth(){
   try{
-    const r=await authedFetch('/api/admin/auth-status',{headers:authHeaders()});
+    const r=await authedFetch('/api/admin/auth-status');
     const d=await r.json();
 
-    // Backend returns { needsPassword, isAuthenticated }
     const needsPassword = !!d.needsPassword;
     const isAuthenticated = !!d.isAuthenticated;
 
     document.getElementById('authPill').textContent =
-      needsPassword ? 'Password required' : 'Unlocked (no password set)';
+      needsPassword ? 'No password set' : (isAuthenticated ? 'Authenticated' : 'Password required');
 
-    // If no password set, show setup UI
     if(needsPassword){
       document.getElementById('loginTitle').textContent='Set Admin Password';
       document.getElementById('loginSubtitle').textContent='Create a password to secure the admin panel.';
       document.getElementById('confirmRow').style.display='block';
       document.getElementById('loginBtn').textContent='Create Password';
-      document.getElementById('loginHint').textContent='This will store a hashed password in your Railway volume.';
+      document.getElementById('loginHint').textContent='This stores a hashed password in your Railway volume.';
       document.getElementById('loginForm').onsubmit = setupPassword;
       return;
     }
 
-    // Password exists; if already authenticated, show panel
     if(isAuthenticated){
       showAdminPanel();
     } else {
       document.getElementById('loginForm').onsubmit = login;
     }
-  }catch(e){
+  }catch{
     document.getElementById('authPill').textContent='Auth check failed';
   }
 }
@@ -542,9 +434,6 @@ function showAdminPanel(){
   refreshAll();
 }
 
-/* ===========================
-   LOGIN / SETUP PASSWORD
-=========================== */
 async function login(e){
   e.preventDefault();
   const pw=document.getElementById('loginPassword').value;
@@ -556,9 +445,8 @@ async function login(e){
       body:JSON.stringify({password:pw})
     });
     const d=await r.json();
-    if(d.error) throw new Error(d.error);
+    if(!r.ok) throw new Error(d.error || 'Login failed');
 
-    // Support either field name
     sessionToken = (d.sessionToken || d.token);
     if(!sessionToken) throw new Error('Login succeeded but no session token returned');
 
@@ -583,7 +471,7 @@ async function setupPassword(e){
       body:JSON.stringify({password:pw})
     });
     const d=await r.json();
-    if(d.error) throw new Error(d.error);
+    if(!r.ok) throw new Error(d.error || 'Setup failed');
 
     sessionToken = (d.sessionToken || d.token);
     if(!sessionToken) throw new Error('Password set but no session token returned');
@@ -596,13 +484,9 @@ async function setupPassword(e){
   }
 }
 
-/* ===========================
-   DATA LOADERS
-=========================== */
 async function refreshAll(){
   document.getElementById('sessionBox').textContent = sessionToken || '(none)';
 
-  // Auth status box (useful debug)
   try{
     const r=await authedFetch('/api/admin/auth-status');
     const d=await r.json();
@@ -622,21 +506,19 @@ async function refreshAll(){
 async function loadStats(){
   try{
     const r=await authedFetch('/api/stats');
-    if(!r.ok) throw new Error('Stats request failed');
     const d=await r.json();
     document.getElementById('statMessages').textContent = d.totalMessages ?? 0;
-    document.getElementById('statCost').textContent = '$' + (d.totalCost ?? 0).toFixed(4);
+    document.getElementById('statCost').textContent = '$' + Number(d.totalCost ?? 0).toFixed(4);
     document.getElementById('statProviders').textContent = d.providers ?? 0;
-  }catch(e){
-    // non-fatal
-  }
+    document.getElementById('statModels').textContent = d.modelsKnown ?? 0;
+  }catch{}
 }
 
 async function resetStats(){
   try{
     const r=await authedFetch('/api/stats/reset',{method:'POST'});
     const d=await r.json();
-    if(d.error) throw new Error(d.error);
+    if(!r.ok) throw new Error(d.error || 'Reset failed');
     showToast('Stats reset!');
     refreshAll();
   }catch(e){
@@ -648,12 +530,11 @@ async function loadApiKeys(){
   const box=document.getElementById('apiKeysBox');
   try{
     const r=await authedFetch('/api/admin/api-keys');
-    if(r.status===401) throw new Error('Unauthorized (session missing/expired)');
     const d=await r.json();
-    if(d.error) throw new Error(d.error);
+    if(!r.ok) throw new Error(d.error || 'Unauthorized');
     box.textContent = JSON.stringify(d,null,2);
   }catch(e){
-    box.textContent = 'Failed to load API keys: ' + e.message;
+    box.textContent = 'Failed to load API keys: ' + (e.message || 'Unknown error');
   }
 }
 
@@ -661,15 +542,13 @@ async function loadConfig(){
   try{
     const r=await fetch('/api/config');
     const d=await r.json();
-    // Guardrails + prompt fields (if present)
+
     if(d.systemPrompt!=null) document.getElementById('systemPrompt').value = d.systemPrompt;
     if(d.guardrails){
       document.getElementById('maxCost').value = d.guardrails.maxCost ?? '';
       document.getElementById('maxTokens').value = d.guardrails.maxTokens ?? '';
     }
-  }catch(e){
-    // non-fatal
-  }
+  }catch{}
 }
 
 async function saveSystemPrompt(){
@@ -681,7 +560,7 @@ async function saveSystemPrompt(){
       body:JSON.stringify({systemPrompt:prompt})
     });
     const d=await r.json();
-    if(d.error) throw new Error(d.error);
+    if(!r.ok) throw new Error(d.error || 'Save failed');
     showToast('Saved!');
   }catch(e){ showToast(e.message,'error'); }
 }
@@ -690,6 +569,7 @@ async function saveGuardrails(){
   try{
     const maxCost = document.getElementById('maxCost').value;
     const maxTokens = document.getElementById('maxTokens').value;
+
     const r=await authedFetch('/api/admin/guardrails',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -699,35 +579,37 @@ async function saveGuardrails(){
       })
     });
     const d=await r.json();
-    if(d.error) throw new Error(d.error);
+    if(!r.ok) throw new Error(d.error || 'Save failed');
     showToast('Saved!');
   }catch(e){ showToast(e.message,'error'); }
+}
+
+function fillSelect(selectEl, options){
+  selectEl.innerHTML = '';
+  for(const opt of options){
+    const o=document.createElement('option');
+    o.value=opt;
+    o.textContent=opt;
+    selectEl.appendChild(o);
+  }
 }
 
 async function loadModelOptions(){
   try{
     const r=await authedFetch('/api/model-options');
-    if(r.status===401) throw new Error('Unauthorized (session missing/expired)');
     const d=await r.json();
-    if(d.error) throw new Error(d.error);
+    if(!r.ok) throw new Error(d.error || 'Unauthorized');
 
-    const options = d.options || [];
+    const options = Array.isArray(d.options) ? d.options : [];
     document.getElementById('statModels').textContent = options.length;
 
-    // Fill dropdowns
     const fast=document.getElementById('fastModel');
     const full=document.getElementById('fullModel');
     const fallback=document.getElementById('fallbackModel');
 
-    fast.innerHTML = '';
-    full.innerHTML = '';
-    fallback.innerHTML = '';
-
-    for(const opt of options){
-      const o1=document.createElement('option'); o1.value=opt; o1.textContent=opt; fast.appendChild(o1);
-      const o2=document.createElement('option'); o2.value=opt; o2.textContent=opt; full.appendChild(o2);
-      const o3=document.createElement('option'); o3.value=opt; o3.textContent=opt; fallback.appendChild(o3);
-    }
+    fillSelect(fast, options);
+    fillSelect(full, options);
+    fillSelect(fallback, options);
 
     if(d.selected){
       if(d.selected.fast) fast.value = d.selected.fast;
@@ -735,7 +617,7 @@ async function loadModelOptions(){
       if(d.selected.fallback) fallback.value = d.selected.fallback;
     }
   }catch(e){
-    // non-fatal
+    // non-fatal; leave dropdowns as-is
   }
 }
 
@@ -751,7 +633,7 @@ async function saveModelRouting(){
       body:JSON.stringify({fast,full,fallback})
     });
     const d=await r.json();
-    if(d.error) throw new Error(d.error);
+    if(!r.ok) throw new Error(d.error || 'Save failed');
     showToast('Saved!');
   }catch(e){ showToast(e.message,'error'); }
 }
@@ -760,17 +642,13 @@ async function syncModelOptions(){
   try{
     const r=await authedFetch('/api/model-options/sync',{method:'POST'});
     const d=await r.json();
-    if(d.error) throw new Error(d.error);
+    if(!r.ok) throw new Error(d.error || 'Sync failed');
     showToast('Synced!');
     loadModelOptions();
   }catch(e){ showToast(e.message,'error'); }
 }
 
-/* ===========================
-   STARTUP
-=========================== */
 checkAuth();
 </script>
-
 </body>
 </html>
