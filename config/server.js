@@ -12,14 +12,28 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// Resolve project root (one level above this /config folder).
+const ROOT_DIR = path.resolve(__dirname, '..');
+
 let providerStatus = initializeProviders();
 
-const CONFIG_PATH = path.join(__dirname, "config", "models.json");
-const SECRETS_PATH = path.join(__dirname, "config", "secrets.json");
-const DATA_DIR = path.join(__dirname, "data");
-const conversationsPath = path.join(DATA_DIR, "conversations.json");
-const projectsPath = path.join(DATA_DIR, "projects.json");
-const statsPath = path.join(DATA_DIR, "stats.json");
+// Persist all runtime state (conversations, projects, stats, admin password, etc.)
+// to a stable directory. On Railway, this should point at your mounted volume.
+const DATA_DIR = process.env.DATA_DIR || path.join(ROOT_DIR, 'data');
+
+// Model routing/config lives in a JSON file. We bootstrap it into DATA_DIR on first run
+// so admin changes survive redeploys.
+const DEFAULT_CONFIG_PATH = path.join(__dirname, 'config', 'models.json');
+const CONFIG_PATH = path.join(DATA_DIR, 'models.json');
+
+// Secrets (hashed admin password + optional provider keys if you choose to store them)
+// are stored in DATA_DIR so they persist across deploys without committing to git.
+const SECRETS_PATH = path.join(DATA_DIR, 'secrets.json');
+const LEGACY_SECRETS_PATH = path.join(__dirname, 'config', 'secrets.json');
+
+const conversationsPath = path.join(DATA_DIR, 'conversations.json');
+const projectsPath = path.join(DATA_DIR, 'projects.json');
+const statsPath = path.join(DATA_DIR, 'stats.json');
 
 const adminSessions = new Map();
 const SESSION_DURATION = 24 * 60 * 60 * 1000;
@@ -37,26 +51,56 @@ const AUTO_LOAD_FILES = {
 const IMPORTANT_DIRS = ['src', 'app', 'pages', 'components', 'lib', 'utils', 'api', 'routes', 'models', 'services'];
 
 async function loadConfig() {
-  const text = await fs.readFile(CONFIG_PATH, "utf8");
-  return JSON.parse(text);
+  try {
+    const text = await fs.readFile(CONFIG_PATH, 'utf8');
+    return JSON.parse(text);
+  } catch (err) {
+    // If we haven't bootstrapped config yet, fall back to the bundled default.
+    const fallbackPath = DEFAULT_CONFIG_PATH;
+    const text = await fs.readFile(fallbackPath, 'utf8');
+    return JSON.parse(text);
+  }
 }
 
 async function saveConfig(config) {
-  await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), "utf8");
+  await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
 }
 
 async function loadSecrets() {
   try {
-    const text = await fs.readFile(SECRETS_PATH, "utf8");
-    return JSON.parse(text);
+    const text = await fs.readFile(SECRETS_PATH, 'utf8');
+    const parsed = JSON.parse(text);
+    return {
+      adminPassword: parsed.adminPassword || null,
+      apiKeys: parsed.apiKeys || {},
+    };
   } catch (err) {
-    if (err.code === "ENOENT") return { adminPassword: null, apiKeys: {} };
-    throw err;
+    if (err.code !== 'ENOENT') throw err;
+
+    // Migrate legacy secrets if they exist (older builds stored them under /config/config).
+    try {
+      const legacyText = await fs.readFile(LEGACY_SECRETS_PATH, 'utf8');
+      const legacy = JSON.parse(legacyText);
+      const migrated = {
+        adminPassword: legacy.adminPassword || null,
+        apiKeys: legacy.apiKeys || legacy.keys || {},
+      };
+      await saveSecrets(migrated);
+      return migrated;
+    } catch (e) {
+      if (e.code !== 'ENOENT') console.warn('Legacy secrets read failed:', e.message);
+    }
+
+    return { adminPassword: null, apiKeys: {} };
   }
 }
 
 async function saveSecrets(secrets) {
-  await fs.writeFile(SECRETS_PATH, JSON.stringify(secrets, null, 2), "utf8");
+  const normalized = {
+    adminPassword: secrets.adminPassword || null,
+    apiKeys: secrets.apiKeys || {},
+  };
+  await fs.writeFile(SECRETS_PATH, JSON.stringify(normalized, null, 2), 'utf8');
 }
 
 function getApiKey(provider) {
@@ -95,6 +139,19 @@ async function ensureDataDir() {
   try { await fs.mkdir(DATA_DIR, { recursive: true }); } catch (err) { if (err.code !== "EEXIST") console.error(err); }
 }
 await ensureDataDir();
+// Bootstrap persisted config file into DATA_DIR on first run.
+try {
+  await fs.access(CONFIG_PATH);
+} catch (err) {
+  try {
+    const base = await fs.readFile(DEFAULT_CONFIG_PATH, 'utf8');
+    await fs.writeFile(CONFIG_PATH, base, 'utf8');
+    console.log('[boot] created', CONFIG_PATH);
+  } catch (e) {
+    console.warn('[boot] failed to bootstrap models.json:', e.message);
+  }
+}
+
 
 async function readJson(filePath, defaultValue) {
   try { return JSON.parse(await fs.readFile(filePath, "utf8")); }
@@ -365,10 +422,19 @@ async function updateProjectCost(projectId, cost) {
 }
 
 app.use(express.json({ limit: "5mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+const PUBLIC_DIR = await (async () => {
+  try {
+    await fs.access(path.join(ROOT_DIR, 'public'));
+    return path.join(ROOT_DIR, 'public');
+  } catch {
+    return path.join(__dirname, 'public');
+  }
+})();
 
-app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
-app.get("/admin", (req, res) => res.sendFile(path.join(__dirname, "public", "admin.html")));
+app.use(express.static(PUBLIC_DIR));
+
+app.get('/', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'index.html')));
+app.get('/admin', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'admin.html')));
 
 // Admin endpoints
 app.get("/api/admin/auth-status", async (req, res) => {
