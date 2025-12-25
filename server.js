@@ -95,7 +95,7 @@ function createSessionToken() {
 }
 
 function getSession(req) {
-  const token = req.headers["x-admin-session"];
+  const token = req.get("x-admin-session");
   if (!token) return null;
   const session = adminSessions.get(token);
   if (!session) return null;
@@ -266,7 +266,7 @@ app.post("/admin/login", (req, res) => app._router.handle(req, res, () => {}));
 app.post("/api/admin/logout", requireAuth, async (req, res) => {
   const token = req.headers["x-admin-session"];
   if (token) adminSessions.delete(token);
-  res.json({ ok: true });
+  res.json({ ok: true, token, sessionToken: token });
 });
 
 app.post("/api/admin/setup-password", async (req, res) => {
