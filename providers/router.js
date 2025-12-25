@@ -1,7 +1,9 @@
 // Smart message routing based on complexity and keywords
 
 export function routeMessage(message, config, hasFiles = false) {
-  const msg = message.toLowerCase();
+  // Be defensive: the frontend might accidentally send a non-string (e.g. an object payload)
+  const safe = typeof message === "string" ? message : (message == null ? "" : JSON.stringify(message));
+  const msg = safe.toLowerCase();
   const routing = config.routing || {};
   const keywords = routing.keywords || {};
   

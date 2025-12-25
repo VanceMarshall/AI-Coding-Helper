@@ -1,0 +1,53 @@
+{
+  "lastSyncedAt": null,
+  "options": [
+    {
+      "provider": "google",
+      "model": "gemini-3-flash-preview",
+      "displayName": "Gemini 3 Flash (Preview)",
+      "inputCost": 0.50,
+      "outputCost": 3.00,
+      "tags": ["fast", "coding", "recommended"]
+    },
+    {
+      "provider": "google",
+      "model": "gemini-2.5-pro",
+      "displayName": "Gemini 2.5 Pro",
+      "inputCost": 1.25,
+      "outputCost": 10.00,
+      "tags": ["coding", "reasoning"]
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.2",
+      "displayName": "GPT-5.2",
+      "inputCost": 1.75,
+      "outputCost": 14.00,
+      "tags": ["coding", "recommended"]
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.2-pro",
+      "displayName": "GPT-5.2 Pro",
+      "inputCost": 3.50,
+      "outputCost": 28.00,
+      "tags": ["coding", "expensive"]
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5",
+      "displayName": "Claude Sonnet 4.5",
+      "inputCost": 3.00,
+      "outputCost": 15.00,
+      "tags": ["coding", "recommended"]
+    },
+    {
+      "provider": "anthropic",
+      "model": "claude-opus-4-5",
+      "displayName": "Claude Opus 4.5",
+      "inputCost": 5.00,
+      "outputCost": 25.00,
+      "tags": ["coding", "expensive"]
+    }
+  ]
+}

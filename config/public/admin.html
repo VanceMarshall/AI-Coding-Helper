@@ -149,37 +149,6 @@
     </div>
 
     <h3 class="section-title">🤖 Model Configuration</h3>
-  <div class="card" style="margin-bottom:16px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-      <div>
-        <div style="font-weight:700;margin-bottom:6px">Quick model routing</div>
-        <div style="color:var(--text3);font-size:13px">Choose the Fast / Full / Fallback models used by the app. This does not change your routing heuristics.</div>
-      </div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <button class="btn btn-secondary" onclick="syncModelOptions()">Sync model list</button>
-        <div id="modelOptionsStatus" style="color:var(--text3);font-size:12px"></div>
-      </div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:12px">
-      <div class="form-group" style="margin:0">
-        <label>Fast model</label>
-        <select id="routeFast" class="input"></select>
-      </div>
-      <div class="form-group" style="margin:0">
-        <label>Full model</label>
-        <select id="routeFull" class="input"></select>
-      </div>
-      <div class="form-group" style="margin:0">
-        <label>Fallback model</label>
-        <select id="routeFallback" class="input"></select>
-      </div>
-    </div>
-    <div style="display:flex;justify-content:flex-end;margin-top:12px">
-      <button class="btn btn-primary" onclick="saveModelRouting()">Save routing</button>
-    </div>
-  </div>
-
     <p class="subtitle">Tap on a model to edit its settings</p>
     <div class="grid" id="modelCards"></div>
 
@@ -254,7 +223,7 @@
   <div class="toast" id="toast"></div>
 
 <script>
-let config=null,stats=null,apiKeys={},modelOptions=null,sessionToken=localStorage.getItem('adminSession');
+let config=null,stats=null,apiKeys={},sessionToken=localStorage.getItem('adminSession');
 const providerNames={openai:'OpenAI',anthropic:'Anthropic',google:'Google',github:'GitHub'};
 
 function showToast(m,t='success'){const e=document.getElementById('toast');e.textContent=m;e.className=`toast ${t}`;e.style.display='block';setTimeout(()=>e.style.display='none',3000)}
@@ -353,7 +322,7 @@ async function logout(){
 }
 
 async function loadAll(){
-  await Promise.all([loadConfig(),loadStats(),loadApiKeys(),loadModelOptions()]);
+  await Promise.all([loadConfig(),loadStats(),loadApiKeys()]);
 }
 
 async function loadConfig(){
@@ -378,90 +347,6 @@ async function loadApiKeys(){
     renderApiKeys();
   }catch(e){console.error(e)}
 }
-
-
-async function loadModelOptions(){
-  try{
-    const r=await fetch('/api/model-options',{headers:authHeaders()});
-    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
-    modelOptions=await r.json();
-    renderModelRoutingControls();
-  }catch(e){console.error(e)}
-}
-
-function fmtCost(v){
-  if(v===null||v===undefined) return 'n/a';
-  const n=Number(v);
-  if(Number.isNaN(n)) return 'n/a';
-  return `$${n.toFixed(2)}/MTok`;
-}
-
-function renderModelRoutingControls(){
-  const box=document.getElementById('modelRoutingControls');
-  if(!box||!modelOptions) return;
-
-  const all=(modelOptions.models||[])
-    .filter(m=>m.tags?.includes('coding'))
-    .sort((a,b)=>{
-      // prefer recommended order: fast, full, fallback tags
-      const rank=(m)=>m.tags?.includes('best')?0:m.tags?.includes('top')?1:m.tags?.includes('fallback')?2:m.tags?.includes('fast')?3:4;
-      return rank(a)-rank(b) || (a.provider+a.id).localeCompare(b.provider+b.id);
-    });
-
-  function buildOptions(selected){
-    return all.map(m=>{
-      const label=`${m.displayName}  (${m.provider})  in:${fmtCost(m.inputCost)} out:${fmtCost(m.outputCost)}${m.notes?`  - ${m.notes}`:''}`;
-      const val=`${m.provider}::${m.id}`;
-      return `<option value="${val}" ${val===selected?'selected':''}>${label}</option>`;
-    }).join('');
-  }
-
-  const curFast=`${config?.models?.fast?.provider||'google'}::${config?.models?.fast?.model||'gemini-3-flash-preview'}`;
-  const curFull=`${config?.models?.full?.provider||'openai'}::${config?.models?.full?.model||'gpt-5.2'}`;
-  const curFallback=`${config?.models?.fallback?.provider||'anthropic'}::${config?.models?.fallback?.model||'claude-sonnet-4-5'}`;
-
-  document.getElementById('routeFastModel').innerHTML=buildOptions(curFast);
-  document.getElementById('routeFullModel').innerHTML=buildOptions(curFull);
-  document.getElementById('routeFallbackModel').innerHTML=buildOptions(curFallback);
-
-  const meta=modelOptions.meta||{};
-  const parts=['openai','google','anthropic'].map(p=>meta[p]?.lastSyncedAt?`${p}: ${new Date(meta[p].lastSyncedAt).toLocaleString()}`:`${p}: never`).join(' • ');
-  document.getElementById('modelLastSynced').textContent=parts;
-}
-
-async function saveRouting(level, sel){
-  try{
-    const [provider, id] = sel.split('::');
-    // Find model option for displayName and cost
-    const m=(modelOptions.models||[]).find(x=>x.provider===provider && x.id===id);
-    const updates={provider, model:id};
-    if(m?.displayName) updates.displayName=m.displayName;
-    if(m?.inputCost!=null) updates.inputCost=m.inputCost;
-    if(m?.outputCost!=null) updates.outputCost=m.outputCost;
-
-    const r=await fetch('/api/config/models',{
-      method:'POST',
-      headers:{'Content-Type':'application/json',...authHeaders()},
-      body:JSON.stringify({modelKey:level,updates})
-    });
-    if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||'Save failed')}
-    await loadConfig();
-    showToast('Saved!');
-  }catch(e){showToast(e.message,'error')}
-}
-
-document.getElementById('routeFastModel')?.addEventListener('change',e=>saveRouting('fast',e.target.value));
-document.getElementById('routeFullModel')?.addEventListener('change',e=>saveRouting('full',e.target.value));
-document.getElementById('routeFallbackModel')?.addEventListener('change',e=>saveRouting('fallback',e.target.value));
-
-document.getElementById('syncModelsBtn')?.addEventListener('click',async ()=>{
-  try{
-    const r=await fetch('/api/admin/model-options/sync',{method:'POST',headers:authHeaders()});
-    if(!r.ok){if(r.status===401)return checkAuth();const d=await r.json().catch(()=>({}));throw new Error(d.error||'Sync failed')}
-    await loadModelOptions();
-    showToast('Synced model list');
-  }catch(e){showToast(e.message,'error')}
-});
 
 function renderApiKeys(){
   const c=document.getElementById('apiKeysList');
@@ -620,120 +505,6 @@ document.getElementById('editModal').addEventListener('click',e=>{if(e.target===
 document.getElementById('apiKeyModal').addEventListener('click',e=>{if(e.target===document.getElementById('apiKeyModal'))closeApiKeyModal()});
 
 checkAuth();
-
-
-// ---- Model options + routing dropdowns ----
-let modelOptions = null;
-
-async function loadModelOptions(){
-  const r = await fetch('/api/model-options', { headers: authHeaders() });
-  if(!r.ok){
-    const t = await r.text();
-    throw new Error('Failed to load model options: ' + r.status + ' ' + t);
-  }
-  modelOptions = await r.json();
-  renderRoutingDropdowns();
-  renderModelOptionsStatus();
-}
-
-function renderModelOptionsStatus(){
-  if(!modelOptions) return;
-  const p = modelOptions.providers || {};
-  const parts = [];
-  for(const [prov, meta] of Object.entries(p)){
-    if(meta.lastSyncedAt) parts.push(`${prov}: ${new Date(meta.lastSyncedAt).toLocaleString()}`);
-  }
-  document.getElementById('modelOptionsStatus').textContent = parts.length ? ('Last sync ' + parts.join(' | ')) : 'Not synced yet';
-}
-
-function optionLabel(o){
-  const cost = (typeof o.inputCost==='number' && typeof o.outputCost==='number') ? ` ($${o.inputCost}/$${o.outputCost} per 1M)` : '';
-  const tags = (o.tags && o.tags.length) ? ` [${o.tags.join(', ')}]` : '';
-  const note = o.notes ? ` - ${o.notes}` : '';
-  return `${o.displayName || o.id} (${o.provider}:${o.id})${cost}${tags}${note}`;
-}
-
-function renderRoutingDropdowns(){
-  if(!modelOptions || !config || !config.models) return;
-  const opts = (modelOptions.options || []).filter(o => o.tags?.includes('coding'));
-
-  function fill(selectId, current){
-    const sel = document.getElementById(selectId);
-    if(!sel) return;
-    sel.innerHTML = '';
-    // Always include current selection even if not coding-tagged
-    const currentKey = current ? `${current.provider}:${current.model}` : '';
-    const seen = new Set();
-    const add = (o) => {
-      const key = `${o.provider}:${o.id}`;
-      if(seen.has(key)) return;
-      seen.add(key);
-      const el = document.createElement('option');
-      el.value = key;
-      el.textContent = optionLabel(o);
-      if(key === currentKey) el.selected = true;
-      sel.appendChild(el);
-    };
-
-    // Current first
-    if(current && current.provider && current.model){
-      const o = (modelOptions.options || []).find(x => x.provider===current.provider && x.id===current.model) || {provider: current.provider, id: current.model, displayName: current.displayName || current.model, inputCost: current.inputCost, outputCost: current.outputCost, tags: ['current']};
-      add(o);
-    }
-
-    // Then known coding options
-    opts.forEach(add);
-  }
-
-  fill('routeFast', config.models.fast);
-  fill('routeFull', config.models.full);
-  fill('routeFallback', config.models.fallback);
-}
-
-async function saveModelRouting(){
-  if(!modelOptions) return;
-
-  const selections = {
-    fast: document.getElementById('routeFast').value,
-    full: document.getElementById('routeFull').value,
-    fallback: document.getElementById('routeFallback').value,
-  };
-
-  for(const [k, val] of Object.entries(selections)){
-    const [provider, id] = val.split(':');
-    const meta = (modelOptions.options || []).find(o => o.provider===provider && o.id===id) || {provider, id, displayName:id};
-    const updates = {
-      provider,
-      model: id,
-      displayName: meta.displayName || id,
-      inputCost: typeof meta.inputCost === 'number' ? meta.inputCost : (config.models[k]?.inputCost ?? 0),
-      outputCost: typeof meta.outputCost === 'number' ? meta.outputCost : (config.models[k]?.outputCost ?? 0),
-    };
-
-    const r = await fetch('/api/config/models', {
-      method:'POST',
-      headers:{'Content-Type':'application/json',...authHeaders()},
-      body: JSON.stringify({ modelKey: k, updates })
-    });
-    if(!r.ok){
-      const t = await r.text();
-      throw new Error(`Failed to save ${k}: ${r.status} ${t}`);
-    }
-  }
-
-  await loadConfig();
-  showToast('Routing updated');
-}
-
-async function syncModelOptions(){
-  const r = await fetch('/api/admin/model-options/sync', { method:'POST', headers: authHeaders() });
-  if(!r.ok){
-    const t = await r.text();
-    throw new Error('Sync failed: ' + r.status + ' ' + t);
-  }
-  await loadModelOptions();
-  showToast('Model list synced');
-}
 </script>
 </body>
 </html>
