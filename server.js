@@ -287,12 +287,45 @@ function parseCodeBlocks(content) {
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
-// Serve admin panel at /admin
+// Serve admin panel at /admin (so /admin works, not just /admin.html)
 app.get("/admin", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "admin.html"));
 });
+app.get("/admin/", (req, res) => res.redirect(302, "/admin"));
 
 // ------------------------------
+
+// ------------------------------
+// Projects APIs (used by /public/index.html)
+// ------------------------------
+
+app.get("/api/projects", async (req, res) => {
+  const projects = await readJson(projectsPath, []);
+  return res.json(projects);
+});
+
+app.post("/api/projects", async (req, res) => {
+  const { name, description = "" } = req.body || {};
+  if (!name) return res.status(400).json({ error: "name is required" });
+
+  const projects = await readJson(projectsPath, []);
+  const newProject = {
+    id: createId(),
+    name,
+    description,
+    createdAt: new Date().toISOString()
+  };
+  projects.unshift(newProject);
+  await writeJson(projectsPath, projects);
+  return res.status(201).json(newProject);
+});
+
+app.delete("/api/projects/:id", async (req, res) => {
+  const projects = await readJson(projectsPath, []);
+  const next = projects.filter((p) => p.id !== req.params.id);
+  await writeJson(projectsPath, next);
+  return res.json({ ok: true });
+});
 // Admin + Config APIs (used by /public/admin.html)
 // ------------------------------
 
