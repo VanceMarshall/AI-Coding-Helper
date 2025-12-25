@@ -287,6 +287,11 @@ function parseCodeBlocks(content) {
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
+// Serve admin panel at /admin
+app.get("/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "admin.html"));
+});
+
 // ------------------------------
 // Admin + Config APIs (used by /public/admin.html)
 // ------------------------------
