@@ -311,3 +311,18 @@ ALWAYS include the filepath as the first line comment so the Apply button works:
 \`\`\`javascript
 // filepath: src/components/Button.jsx
 import React from 'react';
+// ---- FIX: close truncated prompt and start server ----
+
+// Close the unfinished template literal and function
+`;
+}
+
+// Health check for Railway
+app.get("/health", (req, res) => {
+  res.status(200).json({ ok: true });
+});
+
+// Start server
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT}`);
+});
