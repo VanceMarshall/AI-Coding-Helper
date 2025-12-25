@@ -1,654 +1,349 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
   <title>Admin - AI Code Helper</title>
-
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-
   <style>
-    :root{
-      --bg:#0b0f19;
-      --panel:#0f1629;
-      --panel2:#0d1324;
-      --border:rgba(255,255,255,.08);
-      --text:#e6e9f2;
-      --muted:rgba(230,233,242,.70);
-      --accent:#66aaff;
-      --accent2:#6ee7ff;
-      --danger:#ff5a7a;
-      --ok:#36d399;
-      --shadow: 0 20px 50px rgba(0,0,0,.45);
-      --radius:18px;
-      --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      --sans: "Plus Jakarta Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    }
-    *{ box-sizing:border-box; }
-    html,body{ height:100%; }
-    body{
-      margin:0;
-      background:
-        radial-gradient(1200px 600px at 20% 10%, rgba(102,170,255,.18), transparent 60%),
-        radial-gradient(900px 500px at 80% 20%, rgba(110,231,255,.12), transparent 55%),
-        radial-gradient(800px 400px at 50% 90%, rgba(180,120,255,.10), transparent 60%),
-        var(--bg);
-      color:var(--text);
-      font-family:var(--sans);
-      letter-spacing:.2px;
-    }
-
-    .wrap{ max-width: 1180px; margin: 0 auto; padding: 28px 18px 60px; }
-    .topbar{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
-    .brand{ display:flex; align-items:center; gap:12px; }
-    .logo{
-      width:42px;height:42px;border-radius:14px;
-      background: linear-gradient(135deg, rgba(102,170,255,.55), rgba(110,231,255,.35));
-      border:1px solid var(--border);
-      box-shadow: var(--shadow);
-    }
-    h1{ font-size:20px; margin:0; font-weight:700; letter-spacing:.3px; }
-    .sub{ margin:2px 0 0; color:var(--muted); font-size:13px; }
-    .pill{
-      font-family:var(--mono);
-      font-size:12px;
-      padding:8px 10px;
-      border-radius:999px;
-      border:1px solid var(--border);
-      background: rgba(255,255,255,.03);
-      color: var(--muted);
-    }
-    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 18px; }
-    @media (max-width: 900px){ .grid{ grid-template-columns: 1fr; } }
-    .card{
-      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
-      border:1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      overflow:hidden;
-    }
-    .card .head{
-      padding: 16px 18px;
-      display:flex;
-      align-items:flex-start;
-      justify-content:space-between;
-      gap:12px;
-      border-bottom:1px solid var(--border);
-      background: rgba(0,0,0,.12);
-    }
-    .card .head h2{ font-size:15px; margin:0; font-weight:700; }
-    .card .head p{ margin:4px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.35; }
-    .card .body{ padding: 16px 18px 18px; }
-    .row{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
-    label{ display:block; font-size:12px; color: var(--muted); margin: 10px 0 6px; }
-    input, select, textarea{
-      width:100%;
-      background: rgba(0,0,0,.25);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px 12px;
-      color: var(--text);
-      font-family: var(--sans);
-      outline: none;
-    }
-    textarea{ min-height: 120px; resize: vertical; }
-    input::placeholder{ color: rgba(230,233,242,.45); }
-    .btn{
-      border:1px solid transparent;
-      background: rgba(102,170,255,.18);
-      color: var(--text);
-      padding: 12px 14px;
-      border-radius: 14px;
-      cursor:pointer;
-      font-weight: 700;
-      transition: transform .05s ease, background .15s ease, border .15s ease;
-    }
-    .btn:hover{ background: rgba(102,170,255,.24); border-color: rgba(102,170,255,.35); }
-    .btn:active{ transform: translateY(1px); }
-    .btn.primary{
-      background: linear-gradient(135deg, rgba(102,170,255,.55), rgba(110,231,255,.30));
-      border-color: rgba(102,170,255,.35);
-    }
-    .btn.danger{ background: rgba(255,90,122,.18); border-color: rgba(255,90,122,.28); }
-    .btn.ghost{ background: rgba(255,255,255,.04); border-color: var(--border); color: var(--muted); }
-
-    .statGrid{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:10px; }
-    .stat{
-      padding: 12px 14px;
-      border-radius: 16px;
-      border:1px solid var(--border);
-      background: rgba(0,0,0,.18);
-    }
-    .stat .k{ font-size: 12px; color: var(--muted); }
-    .stat .v{ margin-top:4px; font-size: 18px; font-weight: 800; font-family: var(--mono); }
-    .small{ font-size:12px; color: var(--muted); margin-top: 10px; line-height: 1.4; }
-
-    .toast{
-      position: fixed;
-      right: 14px;
-      bottom: 14px;
-      min-width: 260px;
-      max-width: 360px;
-      padding: 12px 14px;
-      border-radius: 16px;
-      border:1px solid var(--border);
-      background: rgba(10,16,28,.92);
-      box-shadow: var(--shadow);
-      display:none;
-      z-index: 9999;
-    }
-    .toast.ok{ border-color: rgba(54,211,153,.28); }
-    .toast.err{ border-color: rgba(255,90,122,.28); }
-    .toast .t{ font-weight:800; margin:0 0 4px; }
-    .toast .m{ margin:0; color: var(--muted); font-size: 12.5px; }
-
-    #loginView{ max-width: 520px; margin: 10vh auto 0; padding: 18px; }
-    #loginView .card{ overflow: visible; }
-    #adminView{ display:none; }
-
-    .split{ display:grid; grid-template-columns: 1.2fr .8fr; gap: 14px; }
-    @media (max-width: 900px){ .split{ grid-template-columns: 1fr; } }
-
-    .kv{
-      width:100%;
-      border:1px solid var(--border);
-      border-radius: 16px;
-      padding: 12px 14px;
-      background: rgba(0,0,0,.18);
-      font-family: var(--mono);
-      font-size: 12px;
-      color: rgba(230,233,242,.85);
-      white-space: pre-wrap;
-      word-break: break-word;
-      min-height: 92px;
-    }
-
-    .divider{ height:1px; background: var(--border); margin: 12px 0; }
+    :root{--bg:#0d1117;--text:#e6edf3;--muted:#9da7b3;--brand:#58a6ff;--danger:#ff6b6b;--ok:#3fb950;--border:rgba(255,255,255,.08)}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;color:var(--text);background:radial-gradient(1200px 900px at 20% 0%,rgba(88,166,255,.12),transparent 60%),radial-gradient(900px 700px at 85% 15%,rgba(63,185,80,.10),transparent 55%),#0d1117;min-height:100vh}
+    .wrap{max-width:1200px;margin:24px auto;padding:0 16px}
+    h1{font-size:22px;margin:0 0 10px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    @media (max-width:980px){.grid{grid-template-columns:1fr}}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    label{display:block;font-size:12px;color:var(--muted);margin:8px 0 6px}
+    input,select,textarea{width:100%;background:rgba(0,0,0,.25);border:1px solid var(--border);border-radius:12px;color:var(--text);padding:10px 12px;outline:none}
+    textarea{min-height:120px;resize:vertical}
+    .btn{background:rgba(88,166,255,.18);border:1px solid rgba(88,166,255,.35);color:var(--text);padding:10px 14px;border-radius:12px;cursor:pointer}
+    .btn:hover{filter:brightness(1.08)}
+    .btn.danger{background:rgba(255,107,107,.14);border-color:rgba(255,107,107,.35)}
+    .pill{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--border);border-radius:999px;padding:6px 10px;background:rgba(0,0,0,.2);color:var(--muted);font-size:12px}
+    .muted{color:var(--muted)}
+    .err{color:var(--danger);font-size:12px;margin-top:8px;white-space:pre-wrap}
+    .ok{color:var(--ok);font-size:12px;margin-top:8px}
+    .hidden{display:none}
+    .kvs{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    @media (max-width:720px){.kvs{grid-template-columns:1fr}}
+    .kv{background:rgba(0,0,0,.18);border:1px solid var(--border);border-radius:12px;padding:10px}
+    .kv .k{font-size:12px;color:var(--muted)}
+    .kv .v{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;margin-top:4px;word-break:break-all}
   </style>
 </head>
 <body>
-
-<div id="loginView" class="wrap">
-  <div class="topbar">
-    <div class="brand">
-      <div class="logo"></div>
-      <div>
-        <h1>Admin</h1>
-        <p class="sub">Secure access to routing, keys, and model options</p>
-      </div>
-    </div>
-    <div class="pill" id="authPill">Checking…</div>
-  </div>
-
-  <div class="card">
-    <div class="head">
-      <div>
-        <h2 id="loginTitle">Admin Login</h2>
-        <p id="loginSubtitle">Enter your admin password to continue.</p>
-      </div>
-    </div>
-    <div class="body">
-      <form id="loginForm">
-        <div id="confirmRow" style="display:none;">
-          <label for="confirmPassword">Confirm Password</label>
-          <input id="confirmPassword" type="password" autocomplete="new-password" placeholder="Confirm password"/>
-        </div>
-
-        <label for="loginPassword" id="pwLabel">Password</label>
-        <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Password"/>
-
-        <div class="row" style="margin-top:12px;">
-          <button class="btn primary" id="loginBtn" type="submit">Login</button>
-          <button class="btn ghost" type="button" onclick="logout()">Clear Session</button>
-        </div>
-
-        <p class="small" id="loginHint"></p>
-      </form>
-    </div>
-  </div>
-</div>
-
-<div id="adminView" class="wrap">
-  <div class="topbar">
-    <div class="brand">
-      <div class="logo"></div>
+  <div class="wrap">
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
       <div>
         <h1>Admin Panel</h1>
-        <p class="sub">Models, keys, routing, and guardrails</p>
+        <div class="muted">Model routing, guardrails, and key visibility. Keys are never displayed in full.</div>
       </div>
-    </div>
-    <div class="row">
-      <div class="pill" id="sessionPill">Session: active</div>
-      <button class="btn ghost" onclick="logout()">Log out</button>
-    </div>
-  </div>
-
-  <div class="grid">
-    <div class="card">
-      <div class="head">
-        <div>
-          <h2>Quick Stats</h2>
-          <p>High-level usage stats (cached). Reset to clear stored totals.</p>
-        </div>
-      </div>
-      <div class="body">
-        <div class="statGrid">
-          <div class="stat">
-            <div class="k">Total Messages</div>
-            <div class="v" id="statMessages">0</div>
-          </div>
-          <div class="stat">
-            <div class="k">Total Cost</div>
-            <div class="v" id="statCost">$0.0000</div>
-          </div>
-          <div class="stat">
-            <div class="k">Providers</div>
-            <div class="v" id="statProviders">0</div>
-          </div>
-          <div class="stat">
-            <div class="k">Models Known</div>
-            <div class="v" id="statModels">0</div>
-          </div>
-        </div>
-
-        <div class="row" style="margin-top:14px;">
-          <button class="btn danger" onclick="resetStats()">Reset Stats</button>
-          <span class="small">Clears saved usage/cost totals.</span>
-        </div>
+      <div class="row">
+        <span id="authPill" class="pill">Auth: <span id="authState">checking…</span></span>
+        <button class="btn" id="logoutBtn">Logout</button>
       </div>
     </div>
 
-    <div class="card">
-      <div class="head">
-        <div>
-          <h2>API Keys</h2>
-          <p>These reflect Railway env vars if set, otherwise stored values.</p>
-        </div>
+    <div id="loginCard" class="card">
+      <h2 style="margin:0 0 8px;font-size:16px">Login</h2>
+      <div class="muted">Enter your admin password.</div>
+      <label>Password</label>
+      <input id="pw" type="password" placeholder="••••••••">
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="loginBtn">Login</button>
+        <button class="btn" id="setPwBtn">Set/Reset Password</button>
       </div>
-      <div class="body">
-        <div class="kv" id="apiKeysBox">Loading…</div>
-      </div>
+      <div id="loginErr" class="err hidden"></div>
+      <div id="loginOk" class="ok hidden"></div>
+      <div class="muted" style="margin-top:10px">Tip: set <code>ADMIN_SESSION_SECRET</code> in Railway for stable sessions.</div>
     </div>
 
-    <div class="card">
-      <div class="head">
-        <div>
-          <h2>Model Routing</h2>
-          <p>Choose models for fast/full/fallback. No automatic changes unless you save.</p>
+    <div id="main" class="grid hidden" style="margin-top:16px">
+      <div class="card">
+        <h2 style="margin:0 0 8px;font-size:16px">Quick Stats</h2>
+        <div class="kvs">
+          <div class="kv"><div class="k">Total Messages</div><div id="statMsg" class="v">-</div></div>
+          <div class="kv"><div class="k">Total Cost (USD)</div><div id="statCost" class="v">-</div></div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn danger" id="resetStatsBtn">Reset Stats</button>
         </div>
       </div>
-      <div class="body">
+
+      <div class="card">
+        <h2 style="margin:0 0 8px;font-size:16px">API Keys</h2>
+        <div class="muted">Shows whether Railway env vars are set (masked).</div>
+        <div id="keysBox" class="kvs" style="margin-top:10px"></div>
+        <div id="keysErr" class="err hidden"></div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin:0 0 8px;font-size:16px">Model Routing</h2>
+        <div class="muted">Choose models for fast / full / fallback. Sync only adds options.</div>
         <label>Fast Model</label>
         <select id="fastModel"></select>
-
         <label>Full Model</label>
         <select id="fullModel"></select>
-
         <label>Fallback Model</label>
         <select id="fallbackModel"></select>
-
-        <div class="row" style="margin-top:14px;">
-          <button class="btn primary" onclick="saveModelRouting()">Save</button>
-          <button class="btn" onclick="syncModelOptions()">Sync Model Options</button>
+        <div class="row" style="margin-top:12px">
+          <button class="btn" id="saveRoutingBtn">Save</button>
+          <button class="btn" id="syncModelsBtn">Sync Model Options</button>
         </div>
-
-        <p class="small">Sync adds options to the list. It does not change your selected models.</p>
+        <div id="routingOk" class="ok hidden"></div>
+        <div id="routingErr" class="err hidden"></div>
       </div>
-    </div>
 
-    <div class="card">
-      <div class="head">
-        <div>
-          <h2>System Prompt</h2>
-          <p>Edits apply to the assistant across providers.</p>
-        </div>
-      </div>
-      <div class="body">
+      <div class="card">
+        <h2 style="margin:0 0 8px;font-size:16px">System Prompt</h2>
         <label>Prompt</label>
-        <textarea id="systemPrompt"></textarea>
-
-        <div class="row" style="margin-top:14px;">
-          <button class="btn primary" onclick="saveSystemPrompt()">Save</button>
+        <textarea id="sysPrompt" placeholder="Optional system prompt..."></textarea>
+        <div class="row" style="margin-top:12px">
+          <button class="btn" id="savePromptBtn">Save</button>
         </div>
+        <div id="promptOk" class="ok hidden"></div>
+        <div id="promptErr" class="err hidden"></div>
       </div>
-    </div>
 
-    <div class="card">
-      <div class="head">
-        <div>
-          <h2>Cost Guardrails</h2>
-          <p>Optional caps to prevent runaway spend.</p>
-        </div>
-      </div>
-      <div class="body">
+      <div class="card">
+        <h2 style="margin:0 0 8px;font-size:16px">Cost Guardrails</h2>
         <label>Max Cost Per Request (USD)</label>
-        <input id="maxCost" type="number" min="0" step="0.01" placeholder="e.g. 0.25"/>
-
+        <input id="maxCost" type="number" step="0.01" placeholder="e.g. 0.25">
         <label>Max Tokens Per Request</label>
-        <input id="maxTokens" type="number" min="0" step="1" placeholder="e.g. 4000"/>
-
-        <div class="row" style="margin-top:14px;">
-          <button class="btn primary" onclick="saveGuardrails()">Save</button>
+        <input id="maxTokens" type="number" step="1" placeholder="e.g. 4000">
+        <div class="row" style="margin-top:12px">
+          <button class="btn" id="saveGuardBtn">Save</button>
         </div>
+        <div id="guardOk" class="ok hidden"></div>
+        <div id="guardErr" class="err hidden"></div>
       </div>
-    </div>
 
-    <div class="card">
-      <div class="head">
-        <div>
-          <h2>Debug</h2>
-          <p>Auth/session visibility to help troubleshoot quickly.</p>
-        </div>
-      </div>
-      <div class="body">
-        <div class="split">
-          <div>
-            <label>Session Token (localStorage)</label>
-            <div class="kv" id="sessionBox"></div>
-          </div>
-          <div>
-            <label>Auth Status</label>
-            <div class="kv" id="authStatusBox">Loading…</div>
-          </div>
-        </div>
-
-        <div class="divider"></div>
-
-        <div class="row">
-          <button class="btn" onclick="refreshAll()">Refresh Data</button>
+      <div class="card">
+        <h2 style="margin:0 0 8px;font-size:16px">Debug</h2>
+        <div class="kvs" style="margin-top:10px">
+          <div class="kv"><div class="k">Session Token (localStorage)</div><div id="tok" class="v">-</div></div>
+          <div class="kv"><div class="k">Auth Status</div><div id="authJson" class="v">-</div></div>
         </div>
       </div>
     </div>
   </div>
-</div>
-
-<div class="toast" id="toast">
-  <p class="t" id="toastTitle">Notice</p>
-  <p class="m" id="toastMsg"></p>
-</div>
 
 <script>
-let sessionToken = localStorage.getItem('adminSession') || '';
+let sessionToken = localStorage.getItem("adminSession") || "";
 
 function authHeaders(){
-  return sessionToken ? {'x-admin-session':sessionToken,'X-Admin-Session':sessionToken} : {};
+  return sessionToken ? { "X-Admin-Session": sessionToken } : {};
+}
+function show(el, on){ el.classList.toggle("hidden", !on); }
+function setText(id, t){ document.getElementById(id).textContent = t; }
+function setErr(id, msg){
+  const el=document.getElementById(id);
+  if(!msg){ el.textContent=""; show(el,false); return; }
+  el.textContent=msg; show(el,true);
+}
+function setOk(id, msg){
+  const el=document.getElementById(id);
+  if(!msg){ el.textContent=""; show(el,false); return; }
+  el.textContent=msg; show(el,true);
 }
 
-function showToast(msg, type='ok'){
-  const t=document.getElementById('toast');
-  const title=document.getElementById('toastTitle');
-  const body=document.getElementById('toastMsg');
-  t.className='toast '+(type==='error'?'err':'ok');
-  title.textContent = type==='error' ? 'Error' : 'Success';
-  body.textContent = msg;
-  t.style.display='block';
-  clearTimeout(window.__toastTimer);
-  window.__toastTimer=setTimeout(()=>{t.style.display='none'},2500);
+async function apiGet(url){
+  const r = await fetch(url, { headers: { ...authHeaders() } });
+  if(!r.ok){
+    const t = await r.text();
+    throw new Error(`${r.status} ${r.statusText}: ${t}`);
+  }
+  return r.json();
+}
+async function apiPost(url, body){
+  const r = await fetch(url, {
+    method:"POST",
+    headers: { "Content-Type":"application/json", ...authHeaders() },
+    body: JSON.stringify(body || {})
+  });
+  if(!r.ok){
+    const t = await r.text();
+    throw new Error(`${r.status} ${r.statusText}: ${t}`);
+  }
+  return r.json();
+}
+
+async function refreshAuth(){
+  try{
+    const data = await apiGet("/api/admin/auth-status");
+    setText("authState", data.isAuthenticated ? "ok" : "not logged in");
+    setText("tok", sessionToken ? sessionToken.slice(0,24)+"…" : "(none)");
+    setText("authJson", JSON.stringify(data, null, 2));
+    show(document.getElementById("loginCard"), !data.isAuthenticated);
+    show(document.getElementById("main"), !!data.isAuthenticated);
+    return !!data.isAuthenticated;
+  }catch(e){
+    setText("authState","error");
+    setText("authJson", String(e.message||e));
+    show(document.getElementById("loginCard"), true);
+    show(document.getElementById("main"), false);
+    return false;
+  }
+}
+
+async function login(){
+  setErr("loginErr",""); setOk("loginOk","");
+  const pw=document.getElementById("pw").value;
+  try{
+    const d = await apiPost("/api/admin/login", { password: pw });
+    // Accept either field (backend returns both)
+    sessionToken = d.sessionToken || d.token || "";
+    if(!sessionToken) throw new Error("Login succeeded but no token returned.");
+    localStorage.setItem("adminSession", sessionToken);
+    setOk("loginOk","Logged in.");
+    await loadAll();
+  }catch(e){
+    setErr("loginErr", String(e.message||e));
+  }
+}
+
+async function setPassword(){
+  setErr("loginErr",""); setOk("loginOk","");
+  const pw=document.getElementById("pw").value;
+  try{
+    await apiPost("/api/admin/set-password", { password: pw });
+    setOk("loginOk","Password set. Now click Login.");
+  }catch(e){
+    setErr("loginErr", String(e.message||e));
+  }
 }
 
 function logout(){
-  localStorage.removeItem('adminSession');
-  sessionToken='';
-  location.reload();
+  sessionToken="";
+  localStorage.removeItem("adminSession");
+  refreshAuth();
 }
 
-async function authedFetch(url, opts={}){
-  return fetch(url, { ...opts, headers: { ...(opts.headers||{}), ...authHeaders() } });
-}
-
-async function checkAuth(){
-  try{
-    const r=await authedFetch('/api/admin/auth-status');
-    const d=await r.json();
-
-    const needsPassword = !!d.needsPassword;
-    const isAuthenticated = !!d.isAuthenticated;
-
-    document.getElementById('authPill').textContent =
-      needsPassword ? 'No password set' : (isAuthenticated ? 'Authenticated' : 'Password required');
-
-    if(needsPassword){
-      document.getElementById('loginTitle').textContent='Set Admin Password';
-      document.getElementById('loginSubtitle').textContent='Create a password to secure the admin panel.';
-      document.getElementById('confirmRow').style.display='block';
-      document.getElementById('loginBtn').textContent='Create Password';
-      document.getElementById('loginHint').textContent='This stores a hashed password in your Railway volume.';
-      document.getElementById('loginForm').onsubmit = setupPassword;
-      return;
-    }
-
-    if(isAuthenticated){
-      showAdminPanel();
-    } else {
-      document.getElementById('loginForm').onsubmit = login;
-    }
-  }catch{
-    document.getElementById('authPill').textContent='Auth check failed';
+function fillModelSelect(sel, options, selected){
+  sel.innerHTML="";
+  const opt0=document.createElement("option");
+  opt0.value=""; opt0.textContent="(select)";
+  sel.appendChild(opt0);
+  for(const o of options){
+    const op=document.createElement("option");
+    op.value=o.id;
+    op.textContent=`${o.displayName || o.id} (${o.provider})`;
+    if(o.id===selected) op.selected=true;
+    sel.appendChild(op);
   }
 }
 
-function showAdminPanel(){
-  document.getElementById('loginView').style.display='none';
-  document.getElementById('adminView').style.display='block';
-  document.getElementById('sessionBox').textContent = sessionToken || '(none)';
-  refreshAll();
-}
-
-async function login(e){
-  e.preventDefault();
-  const pw=document.getElementById('loginPassword').value;
-
-  try{
-    const r=await fetch('/api/admin/login',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({password:pw})
-    });
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error || 'Login failed');
-
-    sessionToken = (d.sessionToken || d.token);
-    if(!sessionToken) throw new Error('Login succeeded but no session token returned');
-
-    localStorage.setItem('adminSession',sessionToken);
-    showAdminPanel();
-    showToast('Logged in!');
-  }catch(err){
-    showToast(err.message || 'Login failed','error');
-  }
-}
-
-async function setupPassword(e){
-  e.preventDefault();
-  const pw=document.getElementById('loginPassword').value;
-  const confirm=document.getElementById('confirmPassword').value;
-  if(pw!==confirm){ showToast('Passwords do not match','error'); return; }
-
-  try{
-    const r=await fetch('/api/admin/setup-password',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({password:pw})
-    });
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error || 'Setup failed');
-
-    sessionToken = (d.sessionToken || d.token);
-    if(!sessionToken) throw new Error('Password set but no session token returned');
-
-    localStorage.setItem('adminSession',sessionToken);
-    showAdminPanel();
-    showToast('Password created!');
-  }catch(err){
-    showToast(err.message || 'Setup failed','error');
-  }
-}
-
-async function refreshAll(){
-  document.getElementById('sessionBox').textContent = sessionToken || '(none)';
-
-  try{
-    const r=await authedFetch('/api/admin/auth-status');
-    const d=await r.json();
-    document.getElementById('authStatusBox').textContent = JSON.stringify(d,null,2);
-  }catch{
-    document.getElementById('authStatusBox').textContent = 'Failed to load';
-  }
-
-  await Promise.allSettled([
-    loadStats(),
-    loadApiKeys(),
-    loadConfig(),
-    loadModelOptions()
-  ]);
-}
+let cachedConfig=null;
 
 async function loadStats(){
-  try{
-    const r=await authedFetch('/api/stats');
-    const d=await r.json();
-    document.getElementById('statMessages').textContent = d.totalMessages ?? 0;
-    document.getElementById('statCost').textContent = '$' + Number(d.totalCost ?? 0).toFixed(4);
-    document.getElementById('statProviders').textContent = d.providers ?? 0;
-    document.getElementById('statModels').textContent = d.modelsKnown ?? 0;
-  }catch{}
+  const st = await apiGet("/api/stats");
+  setText("statMsg", st.totalMessages ?? "-");
+  setText("statCost", (st.totalCostUSD ?? 0).toFixed(4));
 }
 
-async function resetStats(){
-  try{
-    const r=await authedFetch('/api/stats/reset',{method:'POST'});
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error || 'Reset failed');
-    showToast('Stats reset!');
-    refreshAll();
-  }catch(e){
-    showToast(e.message,'error');
-  }
-}
-
-async function loadApiKeys(){
-  const box=document.getElementById('apiKeysBox');
-  try{
-    const r=await authedFetch('/api/admin/api-keys');
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error || 'Unauthorized');
-    box.textContent = JSON.stringify(d,null,2);
-  }catch(e){
-    box.textContent = 'Failed to load API keys: ' + (e.message || 'Unknown error');
+async function loadKeys(){
+  setErr("keysErr","");
+  const box=document.getElementById("keysBox");
+  box.innerHTML="";
+  const d = await apiGet("/api/admin/api-keys");
+  const k = d.keys || {};
+  const items = [
+    ["OpenAI", k.openai || "(not set)"],
+    ["Anthropic", k.anthropic || "(not set)"],
+    ["Google", k.google || "(not set)"],
+    ["GitHub", k.github || "(not set)"]
+  ];
+  for(const [name,val] of items){
+    const div=document.createElement("div");
+    div.className="kv";
+    div.innerHTML=`<div class="k">${name}</div><div class="v">${val}</div>`;
+    box.appendChild(div);
   }
 }
 
 async function loadConfig(){
-  try{
-    const r=await fetch('/api/config');
-    const d=await r.json();
-
-    if(d.systemPrompt!=null) document.getElementById('systemPrompt').value = d.systemPrompt;
-    if(d.guardrails){
-      document.getElementById('maxCost').value = d.guardrails.maxCost ?? '';
-      document.getElementById('maxTokens').value = d.guardrails.maxTokens ?? '';
-    }
-  }catch{}
-}
-
-async function saveSystemPrompt(){
-  try{
-    const prompt=document.getElementById('systemPrompt').value;
-    const r=await authedFetch('/api/admin/system-prompt',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({systemPrompt:prompt})
-    });
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error || 'Save failed');
-    showToast('Saved!');
-  }catch(e){ showToast(e.message,'error'); }
-}
-
-async function saveGuardrails(){
-  try{
-    const maxCost = document.getElementById('maxCost').value;
-    const maxTokens = document.getElementById('maxTokens').value;
-
-    const r=await authedFetch('/api/admin/guardrails',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        maxCost: maxCost===''?null:Number(maxCost),
-        maxTokens: maxTokens===''?null:Number(maxTokens)
-      })
-    });
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error || 'Save failed');
-    showToast('Saved!');
-  }catch(e){ showToast(e.message,'error'); }
-}
-
-function fillSelect(selectEl, options){
-  selectEl.innerHTML = '';
-  for(const opt of options){
-    const o=document.createElement('option');
-    o.value=opt;
-    o.textContent=opt;
-    selectEl.appendChild(o);
-  }
+  cachedConfig = await apiGet("/api/config");
+  document.getElementById("sysPrompt").value = cachedConfig.systemPrompt || "";
+  document.getElementById("maxCost").value = cachedConfig.guardrails?.maxCostPerRequestUSD ?? "";
+  document.getElementById("maxTokens").value = cachedConfig.guardrails?.maxTokensPerRequest ?? "";
 }
 
 async function loadModelOptions(){
+  const cachedModels = await apiGet("/api/model-options");
+  const options = cachedModels.options || [];
+  const routing = cachedConfig?.modelRouting || {fast:"",full:"",fallback:""};
+  fillModelSelect(document.getElementById("fastModel"), options, routing.fast);
+  fillModelSelect(document.getElementById("fullModel"), options, routing.full);
+  fillModelSelect(document.getElementById("fallbackModel"), options, routing.fallback);
+}
+
+async function saveRouting(){
+  setErr("routingErr",""); setOk("routingOk","");
   try{
-    const r=await authedFetch('/api/model-options');
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error || 'Unauthorized');
-
-    const options = Array.isArray(d.options) ? d.options : [];
-    document.getElementById('statModels').textContent = options.length;
-
-    const fast=document.getElementById('fastModel');
-    const full=document.getElementById('fullModel');
-    const fallback=document.getElementById('fallbackModel');
-
-    fillSelect(fast, options);
-    fillSelect(full, options);
-    fillSelect(fallback, options);
-
-    if(d.selected){
-      if(d.selected.fast) fast.value = d.selected.fast;
-      if(d.selected.full) full.value = d.selected.full;
-      if(d.selected.fallback) fallback.value = d.selected.fallback;
-    }
+    const payload = {
+      modelRouting: {
+        fast: document.getElementById("fastModel").value,
+        full: document.getElementById("fullModel").value,
+        fallback: document.getElementById("fallbackModel").value
+      }
+    };
+    await apiPost("/api/admin/save-config", payload);
+    setOk("routingOk","Saved.");
+    await loadConfig();
   }catch(e){
-    // non-fatal; leave dropdowns as-is
+    setErr("routingErr", String(e.message||e));
   }
 }
 
-async function saveModelRouting(){
+async function syncModels(){
+  setErr("routingErr",""); setOk("routingOk","");
   try{
-    const fast=document.getElementById('fastModel').value;
-    const full=document.getElementById('fullModel').value;
-    const fallback=document.getElementById('fallbackModel').value;
-
-    const r=await authedFetch('/api/admin/model-routing',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({fast,full,fallback})
-    });
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error || 'Save failed');
-    showToast('Saved!');
-  }catch(e){ showToast(e.message,'error'); }
+    await apiPost("/api/model-options/sync", {});
+    setOk("routingOk","Synced model options (append-only).");
+    await loadModelOptions();
+  }catch(e){
+    setErr("routingErr", String(e.message||e));
+  }
 }
 
-async function syncModelOptions(){
+async function savePrompt(){
+  setErr("promptErr",""); setOk("promptOk","");
   try{
-    const r=await authedFetch('/api/model-options/sync',{method:'POST'});
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error || 'Sync failed');
-    showToast('Synced!');
-    loadModelOptions();
-  }catch(e){ showToast(e.message,'error'); }
+    await apiPost("/api/admin/save-config", { systemPrompt: document.getElementById("sysPrompt").value });
+    setOk("promptOk","Saved.");
+  }catch(e){
+    setErr("promptErr", String(e.message||e));
+  }
 }
 
-checkAuth();
+async function saveGuard(){
+  setErr("guardErr",""); setOk("guardOk","");
+  try{
+    const maxCost = Number(document.getElementById("maxCost").value || 0);
+    const maxTokens = Number(document.getElementById("maxTokens").value || 0);
+    await apiPost("/api/admin/save-config", { guardrails: { maxCostPerRequestUSD: maxCost, maxTokensPerRequest: maxTokens } });
+    setOk("guardOk","Saved.");
+  }catch(e){
+    setErr("guardErr", String(e.message||e));
+  }
+}
+
+async function loadAll(){
+  const ok = await refreshAuth();
+  if(!ok) return;
+  await Promise.all([loadStats(), loadConfig()]);
+  await Promise.all([loadKeys(), loadModelOptions()]);
+}
+
+document.getElementById("loginBtn").onclick = login;
+document.getElementById("setPwBtn").onclick = setPassword;
+document.getElementById("logoutBtn").onclick = logout;
+document.getElementById("resetStatsBtn").onclick = async ()=>{ await apiPost("/api/stats/reset",{}); await loadStats(); };
+document.getElementById("saveRoutingBtn").onclick = saveRouting;
+document.getElementById("syncModelsBtn").onclick = syncModels;
+document.getElementById("savePromptBtn").onclick = savePrompt;
+document.getElementById("saveGuardBtn").onclick = saveGuard;
+
+loadAll();
 </script>
 </body>
 </html>
