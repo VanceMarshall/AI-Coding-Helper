@@ -74,21 +74,21 @@ function isGpt5Model(model) {
 }
 
 function toResponsesInput(systemPrompt, messages) {
+  // IMPORTANT:
+  // The Responses API accepts either a plain string input OR an array of
+  // *message-like objects* with `role` + string `content`.
+  //
+  // Using typed `content: [{type: "input_text"...}]` is NOT compatible with
+  // the message-like input format and will error.
+  // Ref: OpenAI "Migrate to the Responses API" guide.
   const input = [];
-  if (systemPrompt) {
-    input.push({
-      role: 'system',
-      content: [{ type: 'input_text', text: systemPrompt }]
-    });
-  }
+  if (systemPrompt) input.push({ role: 'system', content: String(systemPrompt) });
+
   for (const m of (messages || [])) {
-    // Safety: normalize to user/assistant.
     const role = m.role === 'assistant' ? 'assistant' : 'user';
-    input.push({
-      role,
-      content: [{ type: 'input_text', text: String(m.content ?? '') }]
-    });
+    input.push({ role, content: String(m.content ?? '') });
   }
+
   return input;
 }
 
@@ -188,13 +188,18 @@ export async function* streamCompletion(modelConfig, systemPrompt, messages, max
     
     const openaiMessages = [
       { role: "system", content: systemPrompt },
-      ...messages.map(m => ({ role: m.role, content: m.content }))
+      ...(messages || []).map(m => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content
+      }))
     ];
 
     const stream = await openaiClient.chat.completions.create({
       model,
       messages: openaiMessages,
-      max_tokens: maxTokens,
+      // `max_tokens` is deprecated and not supported by newer reasoning models.
+      // Use `max_completion_tokens` instead.
+      max_completion_tokens: maxTokens,
       stream: true,
       stream_options: { include_usage: true }
     });
