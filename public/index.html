@@ -65,6 +65,19 @@
     .code-header button.apply-btn:hover{background:rgba(63,185,80,0.15)}
     .code-header button.applied{border-color:var(--green);background:rgba(63,185,80,0.15);color:var(--green)}
     .code-header button:disabled{opacity:0.5;cursor:not-allowed}
+/* Collapsible code blocks */
+details.code-block{margin:12px 0;border:1px solid var(--border);border-radius:8px;background:var(--bg2);overflow:hidden}
+details.code-block>summary{list-style:none}
+details.code-block>summary::-webkit-details-marker{display:none}
+details.code-block>summary::marker{content:''}
+.code-left{display:flex;align-items:center;gap:8px}
+.code-caret{display:inline-block;transition:transform .15s ease;color:var(--text3)}
+details.code-block[open] .code-caret{transform:rotate(90deg)}
+.code-body pre{margin:0;border-radius:0}
+.code-body pre code{border-radius:0}
+.code-block .code-header{border:none;border-bottom:1px solid var(--border);border-radius:0;cursor:pointer}
+.code-block .code-actions button{cursor:pointer}
+
     .empty-state{text-align:center;padding:40px 20px;color:var(--text2)}
     .empty-state h2{font-size:22px;color:var(--text);margin-bottom:8px}
     .empty-state p{margin-bottom:20px;max-width:400px;margin-left:auto;margin-right:auto}
@@ -294,18 +307,39 @@ function detectFilePath(code,lang){
 function renderMarkdown(c){
   if(!c)return'';
   let h=marked.parse(c);
+
+  // Wrap fenced code blocks into collapsible <details>, collapsed by default.
+  // Keeps Copy/Apply buttons accessible even while collapsed.
   h=h.replace(/<pre><code class="language-(\w+)">([\s\S]*?)<\/code><\/pre>/g,(match,lang,code)=>{
     const decoded=code.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"');
     const fp=detectFilePath(decoded,lang);
     const uid='code-'+Math.random().toString(36).substr(2,9);
-    return `<div class="code-header"><span class="code-lang">${fp}</span><div class="code-actions"><button onclick="copyCode('${uid}')">Copy</button><button class="apply-btn" onclick="applyToGitHub('${uid}','${fp}')">Apply</button></div></div><pre><code id="${uid}" class="language-${lang} hljs">${code}</code></pre>`;
+
+    return `
+      <details class="code-block">
+        <summary class="code-header">
+          <div class="code-left">
+            <span class="code-caret">▶</span>
+            <span class="code-lang">${fp}</span>
+          </div>
+          <div class="code-actions">
+            <button type="button" onclick="copyCode('${uid}', event)">Copy</button>
+            <button type="button" class="apply-btn" onclick="applyToGitHub('${uid}','${fp}', event)">Apply</button>
+          </div>
+        </summary>
+        <div class="code-body">
+          <pre><code id="${uid}" class="language-${lang} hljs">${code}</code></pre>
+        </div>
+      </details>
+    `.trim();
   });
+
   return h;
 }
 
-window.copyCode=id=>{const el=document.getElementById(id);if(el){navigator.clipboard.writeText(el.textContent);showToast('Copied!')}};
+window.copyCode=(id,evt)=>{if(evt){evt.preventDefault();evt.stopPropagation();}const el=document.getElementById(id);if(el){navigator.clipboard.writeText(el.textContent);showToast('Copied!')}};
 
-window.applyToGitHub=async(codeId,suggestedPath)=>{
+window.applyToGitHub=async(codeId,suggestedPath,evt)=>{if(evt){evt.preventDefault();evt.stopPropagation();}
   const repo=$('projectSelect').value;
   if(!repo){showToast('Select a project first','error');return}
   const codeEl=document.getElementById(codeId);if(!codeEl){showToast('Code not found','error');return}
