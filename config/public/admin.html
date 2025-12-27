@@ -150,6 +150,24 @@
 
     <h3 class="section-title">🤖 Model Configuration</h3>
     <p class="subtitle">Tap on a model to edit its settings</p>
+
+    <div class="card" style="margin-bottom:16px">
+      <h2 style="margin-bottom:10px">🧠 Model Config Source</h2>
+      <div style="font-size:12px;color:var(--text2);line-height:1.6">
+        <div><span style="color:var(--text3)">Active file:</span> <span id="configPath" style="font-family:var(--mono)"></span></div>
+        <div><span style="color:var(--text3)">Defaults template:</span> <span id="defaultConfigPath" style="font-family:var(--mono)"></span></div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+        <button class="secondary" onclick="resetModelsToDefaults()">Reset models to defaults</button>
+      </div>
+      <div class="env-notice" id="legacyNotice" style="display:none;margin-top:12px;border-left-color:var(--yellow)">
+        ⚠️ This looks like the legacy default model set. Click “Reset models to defaults” to switch to your newer default template.
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-top:10px">
+        Note: Reset overwrites the saved config in your <span style="font-family:var(--mono)">DATA_DIR</span>.
+      </div>
+    </div>
+
     <div class="grid" id="modelCards"></div>
 
     <h3 class="section-title">📈 Daily Usage (Last 7 Days)</h3>
@@ -327,10 +345,34 @@ async function loadAll(){
 
 async function loadConfig(){
   config=await(await fetch('/api/config')).json();
+
+  const meta=config._meta||{};
+  const cp=document.getElementById('configPath');
+  const dp=document.getElementById('defaultConfigPath');
+  if(cp) cp.textContent=meta.configPath||'';
+  if(dp) dp.textContent=meta.defaultConfigPath||'';
+
+  const legacy=document.getElementById('legacyNotice');
+  if(legacy) legacy.style.display=meta.isLegacyDefaults?'block':'none';
+
   renderProviderStatus();
   renderModelCards();
 }
 
+
+async function resetModelsToDefaults(){
+  if(!confirm('Reset models and routing to the default template? This overwrites your saved config.')) return;
+  try{
+    const r=await fetch('/api/config/reset',{method:'POST',headers:authHeaders()});
+    if(!r.ok){if(r.status===401)return checkAuth();throw new Error('Failed')}
+    const d=await r.json();
+    if(d.error) throw new Error(d.error);
+    showToast('Reset to defaults!');
+    await loadConfig();
+  }catch(e){
+    showToast(e.message,'error');
+  }
+}
 async function loadStats(){
   stats=await(await fetch('/api/stats')).json();
   renderStats();

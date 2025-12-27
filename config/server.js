@@ -23,7 +23,8 @@ const DATA_DIR = process.env.DATA_DIR || path.join(ROOT_DIR, 'data');
 
 // Model routing/config lives in a JSON file. We bootstrap it into DATA_DIR on first run
 // so admin changes survive redeploys.
-const DEFAULT_CONFIG_PATH = path.join(__dirname, 'config', 'models.json');
+const DEFAULT_CONFIG_PATH = path.join(__dirname, 'models.json');
+const LEGACY_DEFAULT_CONFIG_PATH = path.join(__dirname, 'config', 'models.json');
 const CONFIG_PATH = path.join(DATA_DIR, 'models.json');
 
 // Secrets (hashed admin password + optional provider keys if you choose to store them)
@@ -64,6 +65,27 @@ async function loadConfig() {
 
 async function saveConfig(config) {
   await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+}
+
+function looksLikeLegacyDefaults(cfg){
+  const m = cfg?.models || {};
+  return (
+    m.fast?.provider === 'google' && m.fast?.model === 'gemini-2.0-flash' &&
+    m.full?.provider === 'anthropic' && m.full?.model === 'claude-sonnet-4-20250514' &&
+    m.fallback?.provider === 'openai' && m.fallback?.model === 'gpt-4o'
+  );
+}
+
+async function configMeta(cfg){
+  const persisted = await fs.access(CONFIG_PATH).then(()=>true).catch(()=>false);
+  return {
+    dataDir: DATA_DIR,
+    configPath: CONFIG_PATH,
+    defaultConfigPath: DEFAULT_CONFIG_PATH,
+    legacyDefaultConfigPath: LEGACY_DEFAULT_CONFIG_PATH,
+    isPersisted: persisted,
+    isLegacyDefaults: looksLikeLegacyDefaults(cfg),
+  };
 }
 
 async function loadSecrets() {
@@ -544,15 +566,20 @@ app.delete("/api/admin/api-keys/:provider", requireAdminAuth, async (req, res) =
 app.get("/api/config", async (req, res) => {
   try {
     const config = await loadConfig();
+    const meta = await configMeta(config);
     res.json({
       models: config.models,
       routing: config.routing,
       templates: config.templates,
-      providers: { openai: providerStatus.openai || false, anthropic: providerStatus.anthropic || false, google: providerStatus.google || false }
+      providers: {
+        openai: providerStatus.openai || false,
+        anthropic: providerStatus.anthropic || false,
+        google: providerStatus.google || false
+      },
+      _meta: meta
     });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
-
 app.post("/api/config/models", requireAdminAuth, async (req, res) => {
   try {
     const config = await loadConfig();
@@ -563,6 +590,18 @@ app.post("/api/config/models", requireAdminAuth, async (req, res) => {
     await saveConfig(config);
     res.json({ ok: true, model: config.models[modelKey] });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post("/api/config/reset", requireAdminAuth, async (req, res) => {
+  try{
+    const base = await fs.readFile(DEFAULT_CONFIG_PATH, 'utf8');
+    const parsed = JSON.parse(base);
+    await saveConfig(parsed);
+    const meta = await configMeta(parsed);
+    res.json({ ok: true, config: { ...parsed, _meta: meta } });
+  }catch(e){
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get("/api/stats", async (req, res) => {
