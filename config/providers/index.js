@@ -69,11 +69,122 @@ export function getProviderStatus() {
   return { ...providerStatus };
 }
 
-export async function* streamCompletion(modelConfig, systemPrompt, messages, maxTokens) {
+function isGpt5Model(model) {
+  return typeof model === 'string' && model.toLowerCase().startsWith('gpt-5');
+}
+
+function toResponsesInput(systemPrompt, messages) {
+  const input = [];
+  if (systemPrompt) {
+    input.push({
+      role: 'system',
+      content: [{ type: 'input_text', text: systemPrompt }]
+    });
+  }
+  for (const m of (messages || [])) {
+    // Safety: normalize to user/assistant.
+    const role = m.role === 'assistant' ? 'assistant' : 'user';
+    input.push({
+      role,
+      content: [{ type: 'input_text', text: String(m.content ?? '') }]
+    });
+  }
+  return input;
+}
+
+async function* streamOpenAIResponses({ model, apiKey, systemPrompt, messages, maxTokens, reasoningEffort = 'medium' }) {
+  if (!apiKey) throw new Error('OpenAI not configured');
+  const url = 'https://api.openai.com/v1/responses';
+
+  const body = {
+    model,
+    input: toResponsesInput(systemPrompt, messages),
+    stream: true,
+    max_output_tokens: maxTokens,
+    reasoning: { effort: reasoningEffort }
+  };
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`OpenAI Responses API error ${res.status}: ${errText}`);
+  }
+
+  const reader = res.body?.getReader?.();
+  if (!reader) throw new Error('OpenAI Responses API streaming not supported in this runtime');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      if (!line.startsWith('data:')) continue;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === '[DONE]') continue;
+
+      let data;
+      try { data = JSON.parse(payload); } catch { continue; }
+
+      // Text deltas
+      const t = data?.type || '';
+      if (t.includes('output_text.delta')) {
+        const delta = typeof data.delta === 'string'
+          ? data.delta
+          : (typeof data?.delta?.text === 'string' ? data.delta.text : null);
+        if (delta) yield { type: 'text', text: delta };
+      }
+
+      // Usage
+      const usage = data?.response?.usage || data?.usage || null;
+      if (usage) {
+        inputTokens = usage.input_tokens ?? usage.prompt_tokens ?? inputTokens;
+        outputTokens = usage.output_tokens ?? usage.completion_tokens ?? outputTokens;
+      }
+    }
+  }
+
+  yield { type: 'done', inputTokens: inputTokens || 0, outputTokens: outputTokens || 0 };
+}
+
+export async function* streamCompletion(modelConfig, systemPrompt, messages, maxTokens, options = {}) {
   const { provider, model } = modelConfig;
 
   if (provider === "openai") {
     if (!openaiClient) throw new Error("OpenAI not configured");
+
+    // Prefer OpenAI Responses API for GPT-5.x models. This enables reasoning effort.
+    if (isGpt5Model(model)) {
+      try {
+        const apiKey = process.env.OPENAI_API_KEY;
+        const reasoningEffort = options.reasoningEffort || 'medium';
+        for await (const ev of streamOpenAIResponses({ model, apiKey, systemPrompt, messages, maxTokens, reasoningEffort })) {
+          yield ev;
+        }
+        return;
+      } catch (e) {
+        // Bulletproof fallback: if Responses API streaming fails for any reason,
+        // fall back to Chat Completions streaming so the app still works.
+        console.warn('[openai] Responses API failed, falling back to chat.completions:', e.message);
+      }
+    }
     
     const openaiMessages = [
       { role: "system", content: systemPrompt },
