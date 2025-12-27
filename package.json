@@ -3,10 +3,10 @@
   "version": "3.0.0",
   "description": "AI-powered coding assistant with multi-provider support, smart routing, and admin panel",
   "type": "module",
-  "main": "server.js",
+  "main": "config/server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+    "start": "node config/server.js",
+    "dev": "node --watch config/server.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
