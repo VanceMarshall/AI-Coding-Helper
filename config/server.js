@@ -23,8 +23,8 @@ const DATA_DIR = process.env.DATA_DIR || path.join(ROOT_DIR, 'data');
 
 // Model routing/config lives in a JSON file. We bootstrap it into DATA_DIR on first run
 // so admin changes survive redeploys.
-const DEFAULT_CONFIG_PATH = path.join(__dirname, 'models.json');
-const LEGACY_DEFAULT_CONFIG_PATH = path.join(__dirname, 'config', 'models.json');
+const DEFAULT_CONFIG_PATH = path.join(__dirname, 'config', 'models.json');
+const LEGACY_DEFAULT_CONFIG_PATH = path.join(__dirname, 'models.json');
 const CONFIG_PATH = path.join(DATA_DIR, 'models.json');
 
 // Secrets (hashed admin password + optional provider keys if you choose to store them)
@@ -331,6 +331,22 @@ function selectFilesToAutoLoad(filePaths, stack, maxFiles = 20) {
   return selected.slice(0, maxFiles);
 }
 
+
+function estimateTokensFromText(text) {
+  if (!text) return 0;
+  // Rough heuristic: ~4 characters per token for English/code.
+  return Math.ceil(String(text).length / 4);
+}
+
+function estimateConversationTokens(messages) {
+  if (!Array.isArray(messages)) return 0;
+  let chars = 0;
+  for (const m of messages) {
+    if (m && m.content) chars += String(m.content).length;
+  }
+  return Math.ceil(chars / 4);
+}
+
 function parseFileRequests(response) {
   const patterns = [
     /\[READ_FILE:\s*([^\]]+)\]/gi,
@@ -348,10 +364,21 @@ function parseFileRequests(response) {
   return files;
 }
 
-function buildSystemPrompt(repoFullName, filePaths, stack, fileContents = {}, mode = "building") {
-  let prompt = mode === "planning" 
-    ? `You are an expert software architect helping plan a new application. Ask clarifying questions, recommend tech stack, and create a project plan. When ready, output: CREATE_PROJECT:{"name":"repo-name","description":"...","stack":"...","features":[...],"pages":[...]}`
-    : `You are an expert full-stack engineer with FULL ACCESS to read any file in this repository.
+function buildSystemPrompt(repoFullName, filePaths, stack, fileContents = {}, mode = "building", options = {}) {
+  const budgetTokens =
+    Number.isFinite(options.budgetTokens)
+      ? options.budgetTokens
+      : (Number(process.env.CONTEXT_BUDGET_TOKENS) || 140000);
+
+  const reservedTokens = Number.isFinite(options.reservedTokens) ? options.reservedTokens : 0;
+  const conversationTokens = Number.isFinite(options.conversationTokens) ? options.conversationTokens : 0;
+
+  const fileOrder = Array.isArray(options.fileOrder) ? options.fileOrder : Object.keys(fileContents);
+
+  let prompt =
+    mode === "planning"
+      ? `You are an expert software architect helping plan a new application. Ask clarifying questions, recommend tech stack, and create a project plan. When ready, output: CREATE_PROJECT:{"name":"repo-name","description":"...","stack":"...","features":[...],"pages":[...]}`
+      : `You are an expert full-stack engineer with FULL ACCESS to read any file in this repository.
 
 ## Your Capabilities
 - You can see the complete file structure below
@@ -380,33 +407,72 @@ When modifying code, show the complete file:
   if (filePaths?.length > 0) {
     prompt += `\n## Repository Structure (${filePaths.length} files)\n\`\`\`\n`;
     const dirs = {};
-    filePaths.forEach(p => {
-      const parts = p.split('/');
-      const dir = parts.length > 1 ? parts.slice(0, -1).join('/') : '.';
+    filePaths.forEach((p) => {
+      const parts = p.split("/");
+      const dir = parts.length > 1 ? parts.slice(0, -1).join("/") : ".";
       if (!dirs[dir]) dirs[dir] = [];
       dirs[dir].push(parts[parts.length - 1]);
     });
-    Object.keys(dirs).sort().slice(0, 50).forEach(dir => {
-      if (dir === '.') dirs[dir].forEach(f => prompt += `${f}\n`);
-      else {
-        prompt += `${dir}/\n`;
-        dirs[dir].slice(0, 10).forEach(f => prompt += `  ${f}\n`);
-        if (dirs[dir].length > 10) prompt += `  ... and ${dirs[dir].length - 10} more\n`;
-      }
-    });
-    prompt += "```\n";
+    Object.keys(dirs)
+      .sort()
+      .slice(0, 50)
+      .forEach((dir) => {
+        if (dir === ".") dirs[dir].forEach((f) => (prompt += `${f}\n`));
+        else {
+          prompt += `${dir}/\n`;
+          dirs[dir].slice(0, 10).forEach((f) => (prompt += `  ${f}\n`));
+          if (dirs[dir].length > 10) prompt += `  ... and ${dirs[dir].length - 10} more\n`;
+        }
+      });
+    prompt += "\`\`\`\n";
   }
 
-  if (Object.keys(fileContents).length > 0) {
+  const baseTokens = estimateTokensFromText(prompt);
+  let remaining = budgetTokens - reservedTokens - conversationTokens - baseTokens;
+  if (!Number.isFinite(remaining) || remaining < 0) remaining = 0;
+
+  const includedFiles = [];
+  const omittedFiles = [];
+
+  const hasFiles = fileOrder.some((fp) => fileContents && fileContents[fp] != null);
+  if (hasFiles) {
     prompt += "\n## Pre-loaded Files\n";
-    for (const [fp, content] of Object.entries(fileContents)) {
-      const ext = fp.split('.').pop();
-      const truncated = content.length > 12000 ? content.slice(0, 12000) + "\n... (truncated)" : content;
-      prompt += `### ${fp}\n\`\`\`${ext}\n${truncated}\n\`\`\`\n\n`;
+    for (const fp of fileOrder) {
+      const content = fileContents?.[fp];
+      if (content == null) continue;
+
+      const ext = (fp.split(".").pop() || "").trim();
+      const block = `### ${fp}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
+      const blockTokens = estimateTokensFromText(block);
+
+      if (blockTokens <= remaining) {
+        prompt += block;
+        remaining -= blockTokens;
+        includedFiles.push(fp);
+      } else {
+        const omission = `### ${fp}\n(omitted: exceeds context budget; request explicitly with [READ_FILE: ${fp}])\n\n`;
+        const omissionTokens = estimateTokensFromText(omission);
+        if (omissionTokens <= remaining) {
+          prompt += omission;
+          remaining -= omissionTokens;
+        }
+        omittedFiles.push(fp);
+      }
     }
   }
 
-  return prompt;
+  return {
+    prompt,
+    includedFiles,
+    omittedFiles,
+    estimates: {
+      budgetTokens,
+      reservedTokens,
+      conversationTokens,
+      baseTokens,
+      remainingTokens: remaining,
+    },
+  };
 }
 
 async function updateStats(modelKey, inputTokens, outputTokens, cost, projectId = null) {
@@ -778,10 +844,46 @@ app.post("/api/chat", async (req, res) => {
       } catch (err) { console.warn("Could not list files", err.message); }
     }
 
-    const systemPrompt = buildSystemPrompt(repo, filePaths, stack, fileContents, mode);
+    // Add the user's message first so our context budgeting accounts for it.
     conversation.messages.push({ role: "user", content: message, timestamp: new Date().toISOString() });
 
-    res.write(`data: ${JSON.stringify({ type: "start", conversationId: conversation.id, model: modelConfig.displayName, modelKey, routeReason, filesLoaded: Object.keys(fileContents).length })}\n\n`);
+    const contextBudgetTokens = Number(process.env.CONTEXT_BUDGET_TOKENS) || 140000;
+    const conversationTokens = estimateConversationTokens(conversation.messages);
+    const reservedTokens = Math.min(Number(modelConfig.maxOutputTokens || 0) || 0, 40000);
+
+    // Preserve a stable file ordering: prioritize auto-loaded / previously-loaded ordering when available.
+    const fileOrder = (typeof allToLoad !== "undefined" && Array.isArray(allToLoad))
+      ? allToLoad
+      : Object.keys(fileContents);
+
+    const built = buildSystemPrompt(repo, filePaths, stack, fileContents, mode, {
+      budgetTokens: contextBudgetTokens,
+      reservedTokens,
+      conversationTokens,
+      fileOrder
+    });
+
+    const systemPrompt = built.prompt;
+
+    if (built.omittedFiles?.length) {
+      res.write(`data: ${JSON.stringify({ type: "status", status: `Context budget applied: included ${built.includedFiles.length} pre-loaded files, omitted ${built.omittedFiles.length} to avoid partial truncation.` })}
+
+`);
+    }
+
+    res.write(`data: ${JSON.stringify({
+      type: "start",
+      conversationId: conversation.id,
+      model: modelConfig.displayName,
+      modelKey,
+      routeReason,
+      filesLoaded: Object.keys(fileContents).length,
+      includedPreloadedFiles: built.includedFiles,
+      omittedPreloadedFiles: built.omittedFiles,
+      promptEstimates: built.estimates
+    })}
+
+`);
 
     let fullResponse = "", metadata = {};
     for await (const chunk of streamCompletion(modelConfig, systemPrompt, conversation.messages, modelConfig.maxOutputTokens)) {
@@ -806,7 +908,7 @@ app.post("/api/chat", async (req, res) => {
             const content = await getFileFromGitHub(repo, fp);
             fileContents[fp] = content;
             additionalFilesLoaded.push(fp);
-            const displayContent = content.length > 5000 ? content.slice(0, 5000) + '\n... (truncated)' : content;
+            const displayContent = content;
             fullResponse += `\n\n---\n📄 **${fp}:**\n\`\`\`\n${displayContent}\n\`\`\`\n`;
             res.write(`data: ${JSON.stringify({ type: "text", text: `\n\n---\n📄 **${fp}:**\n\`\`\`\n${displayContent}\n\`\`\`\n` })}\n\n`);
           } catch (err) {
