@@ -445,12 +445,30 @@ async function updateProjectCost(projectId, cost) {
 
 app.use(express.json({ limit: "5mb" }));
 const PUBLIC_DIR = await (async () => {
+  // Single source of truth: serve ONLY from /config/public (this file lives in /config).
+  // You may override with STATIC_DIR, but ROOT/public is intentionally disabled to avoid confusion.
+  const rootPublic = path.join(ROOT_DIR, 'public');
+  const preferred = path.join(__dirname, 'public'); // /config/public
+
+  // Warn if legacy ROOT/public exists; it is ignored.
   try {
-    await fs.access(path.join(ROOT_DIR, 'public'));
-    return path.join(ROOT_DIR, 'public');
-  } catch {
-    return path.join(__dirname, 'public');
+    await fs.access(rootPublic);
+    console.warn(`[static] Found legacy static dir at ${rootPublic} (ignored). UI is served from ${preferred}.`);
+  } catch {}
+
+  const override = process.env.STATIC_DIR;
+  if (override) {
+    const candidate = path.isAbsolute(override) ? override : path.join(ROOT_DIR, override);
+    if (path.resolve(candidate) === path.resolve(rootPublic)) {
+      throw new Error(`[static] STATIC_DIR points to ${rootPublic}, which is disabled. Use STATIC_DIR=config/public instead.`);
+    }
+    await fs.access(candidate);
+    return candidate;
   }
+
+  // Default: /config/public must exist.
+  await fs.access(preferred);
+  return preferred;
 })();
 
 app.use(express.static(PUBLIC_DIR));
