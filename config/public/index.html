@@ -285,15 +285,32 @@ marked.setOptions({highlight:(c,l)=>l&&hljs.getLanguage(l)?hljs.highlight(c,{lan
 
 
 function renderMarkdown(md){
-  const h=marked.parse(md||'');
-  return h.replace(/<pre><code class="language-([a-z0-9]+) hljs">([\s\S]*?)<\/code><\/pre>/gi,(m,lang,code)=>{
-    const decoded=code.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
-    const explicitPath=extractFilePathFromCode(decoded);
-    const fp=explicitPath||detectFilePath(decoded,lang);
-    const label=explicitPath?fp:(fp+' (?)');
-    const uid='code-'+Math.random().toString(36).slice(2,9);
-    return `<details class="code-block" open>
-      <summary class="code-header">
+  const rendered = marked.parse(md||'');
+  const container = document.createElement('div');
+  container.innerHTML = rendered;
+
+  // Wrap every <pre><code> in a collapsible block with Copy + Create PR actions.
+  // This is DOM-based (not regex-based) so it survives markup/class order differences.
+  const codeNodes = Array.from(container.querySelectorAll('pre > code'));
+  for (const codeEl of codeNodes){
+    const raw = codeEl.textContent || '';
+    const cls = codeEl.getAttribute('class') || '';
+    const langMatch = cls.match(/language-([a-z0-9_+\-]+)/i);
+    const lang = (langMatch ? langMatch[1] : 'text').toLowerCase();
+
+    const explicitPath = extractFilePathFromCode(raw);
+    const fp = explicitPath || detectFilePath(raw, lang);
+    const label = explicitPath ? fp : (fp + ' (?)');
+    const uid = 'code-' + Math.random().toString(36).slice(2,9);
+
+    const details = document.createElement('details');
+    details.className = 'code-block';
+    details.open = true;
+
+    // Preserve innerHTML (may contain syntax highlighting spans).
+    const inner = codeEl.innerHTML;
+
+    details.innerHTML = `<summary class="code-header">
         <div class="code-left">
           <span class="code-caret">▶</span>
           <span class="code-lang">${escapeHtml(label)}</span>
@@ -305,10 +322,18 @@ function renderMarkdown(md){
         </div>
       </summary>
       <div class="code-body">
-        <pre><code id="${uid}" class="language-${lang} hljs" data-suggested-path="${escapeHtml(fp)}">${code}</code></pre>
-      </div>
-    </details>`;
-  });
+        <pre><code id="${uid}" class="${escapeHtml(cls || ('language-'+lang))}" data-suggested-path="${escapeHtml(fp)}">${inner}</code></pre>
+      </div>`;
+
+    const newCode = details.querySelector('code');
+    // Ensure hljs class is present for styles.
+    if (newCode && !/hljs/.test(newCode.className)) newCode.className = (newCode.className + ' hljs').trim();
+
+    const pre = codeEl.parentElement;
+    if (pre) pre.replaceWith(details);
+  }
+
+  return container.innerHTML;
 }
 
 const state={conversationId:null,conversations:[],loadedFiles:[],repoFiles:[],selectedFiles:new Set(),config:null,mode:'auto',chatMode:'building',totalCost:0,streaming:false};
