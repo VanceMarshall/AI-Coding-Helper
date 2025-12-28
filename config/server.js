@@ -558,9 +558,11 @@ function selectFilesToAutoLoad(filePaths, stack, maxFiles = 20) {
 
 function parseFileRequests(response) {
   const patterns = [
-    /\[READ_FILE:\s*([^\]]+)\]/gi,
-    /\[LOAD_FILE:\s*([^\]]+)\]/gi,
-    /\[VIEW_FILE:\s*([^\]]+)\]/gi
+  // Support multiple syntaxes so "open file" works reliably across models/prompts.
+  // Preferred: [READ_FILE: path/to/file]
+    /\[(?:READ|LOAD|VIEW|OPEN)_FILE:\s*([^\]]+)\]/gi,
+    /\bOPEN_FILE:\s*([^\n\r]+)\b/gi,
+    /\/(?:open|read)\s+([^\s]+)\b/gi
   ];
   const files = [];
   for (const pattern of patterns) {
@@ -571,6 +573,82 @@ function parseFileRequests(response) {
     }
   }
   return files;
+}
+
+
+// ------------------------------
+// Token budgeting / context packing (approximate, but effective)
+// ------------------------------
+function approxTokensFromText(text) {
+  // Rough heuristic: ~4 chars/token for English/code mixed.
+  // This intentionally errs on the side of "too many" to avoid provider 400s.
+  if (!text) return 0;
+  return Math.ceil(String(text).length / 4);
+}
+
+function approxTokensFromMessages(messages = []) {
+  let total = 0;
+  for (const m of messages) {
+    total += 8; // small per-message overhead
+    total += approxTokensFromText(m?.content);
+  }
+  return total;
+}
+
+function stripBigCodeBlocks(text, { maxBlockChars = 1500 } = {}) {
+  if (!text || typeof text !== 'string') return text;
+  // Replace large fenced code blocks with a short placeholder to preserve narrative.
+  return text.replace(/```([\s\S]*?)```/g, (m, inner) => {
+    if (inner.length <= maxBlockChars) return m;
+    const head = inner.slice(0, Math.min(400, inner.length));
+    return "```\n" + head + "\n... (code block omitted from context)\n```";
+  });
+}
+
+function prepareMessagesForModel(conversationMessages, { systemPrompt, modelConfig }) {
+  const contextWindow = modelConfig?.contextWindow || 200000;
+  const reservedOut = modelConfig?.maxOutputTokens || 8192;
+  const safetyMargin = 2000;
+
+  const maxInputBudget = Math.max(8000, contextWindow - reservedOut - safetyMargin);
+  const systemTokens = approxTokensFromText(systemPrompt);
+  let budgetForMessages = maxInputBudget - systemTokens;
+
+  if (budgetForMessages < 2000) budgetForMessages = 2000;
+
+  const src = Array.isArray(conversationMessages) ? conversationMessages : [];
+  const trimmed = [];
+
+  // Keep the most recent messages first, drop older ones until we fit.
+  // Also strip huge code blocks from older assistant messages (beyond the last few turns).
+  const keepUnstripped = 8;
+  for (let i = src.length - 1; i >= 0; i--) {
+    const msg = { ...src[i] };
+    const ageFromEnd = (src.length - 1) - i;
+    if (msg.role === 'assistant' && ageFromEnd > keepUnstripped) {
+      msg.content = stripBigCodeBlocks(msg.content);
+    }
+    const msgTokens = approxTokensFromText(msg.content) + 8;
+    if (approxTokensFromMessages(trimmed) + msgTokens > budgetForMessages) break;
+    trimmed.unshift(msg);
+  }
+
+  const droppedCount = src.length - trimmed.length;
+  return { messages: trimmed, droppedCount, maxInputBudget, systemTokens };
+}
+
+function isTokenLimitError(err) {
+  const msg = (err?.message || String(err || '')).toLowerCase();
+  return msg.includes('input tokens exceed') || msg.includes('context length') || msg.includes('maximum context') || msg.includes('too many tokens') || msg.includes('token limit');
+}
+
+function cleanFileRequestTags(text) {
+  if (!text || typeof text !== 'string') return text;
+  return text
+    .replace(/\[(?:READ|LOAD|VIEW|OPEN)_FILE:[^\]]+\]/gi, '')
+    .replace(/\bOPEN_FILE:[^\n\r]+\b/gi, '')
+    .replace(/\/(?:open|read)\s+[^\s]+\b/gi, '')
+    .trim();
 }
 
 function buildSystemPrompt(repoFullName, filePaths, stack, fileContents = {}, mode = "building") {
@@ -626,7 +704,17 @@ When modifying code, show the complete file:
     prompt += "\n## Pre-loaded Files\n";
     for (const [fp, content] of Object.entries(fileContents)) {
       const ext = fp.split('.').pop();
-      const truncated = content.length > 12000 ? content.slice(0, 12000) + "\n... (truncated)" : content;
+      const maxChars = 25000;
+      const hardMax = 60000;
+      let truncated = content;
+      if (content.length > maxChars) {
+        // Keep head+tail so the model sees imports/exports and end-of-file behaviors.
+        const head = content.slice(0, Math.min(18000, content.length));
+        const tailLen = Math.min(8000, content.length);
+        const tail = content.slice(content.length - tailLen);
+        truncated = head + "\n\n... (truncated: request the file again for full content) ...\n\n" + tail;
+        if (truncated.length > hardMax) truncated = truncated.slice(0, hardMax) + "\n... (hard truncated)";
+      }
       prompt += `### ${fp}\n\`\`\`${ext}\n${truncated}\n\`\`\`\n\n`;
     }
   }
@@ -991,8 +1079,11 @@ app.post("/api/chat", async (req, res) => {
         
         // Smart auto-load key files
         const autoLoadList = selectFilesToAutoLoad(filePaths, stack);
-        const previouslyLoaded = conversation.loadedFiles || [];
-        const allToLoad = [...new Set([...autoLoadList, ...loadedFiles, ...previouslyLoaded])];
+        const previouslyLoaded = Array.isArray(conversation.loadedFiles) ? conversation.loadedFiles : [];
+        const MAX_PERSISTED_OPEN_FILES = 8;
+        const MAX_FILES_TO_LOAD = 16;
+        const trimmedPrev = previouslyLoaded.slice(-MAX_PERSISTED_OPEN_FILES);
+        const allToLoad = [...new Set([...autoLoadList, ...loadedFiles, ...trimmedPrev])].slice(0, MAX_FILES_TO_LOAD);
         
         res.write(`data: ${JSON.stringify({ type: "status", status: `Loading ${allToLoad.length} project files...` })}\n\n`);
         
@@ -1001,52 +1092,191 @@ app.post("/api/chat", async (req, res) => {
           catch (err) { console.warn(`Could not load ${fp}`, err.message); }
         }
         
-        conversation.loadedFiles = Object.keys(fileContents);
+        conversation.loadedFiles = Object.keys(fileContents).slice(-24);
       } catch (err) { console.warn("Could not list files", err.message); }
     }
 
     const systemPrompt = buildSystemPrompt(repo, filePaths, stack, fileContents, mode);
     conversation.messages.push({ role: "user", content: message, timestamp: new Date().toISOString() });
 
-    res.write(`data: ${JSON.stringify({ type: "start", conversationId: conversation.id, model: modelConfig.displayName, modelKey, routeReason, filesLoaded: Object.keys(fileContents).length })}\n\n`);
+    // Pack context and, if necessary, auto-switch to a larger-context model to prevent hard failures.
+    let packed = prepareMessagesForModel(conversation.messages, { systemPrompt, modelConfig });
+    let messagesForModel = packed.messages;
 
-    let fullResponse = "", metadata = {};
-    for await (const chunk of streamCompletion(modelConfig, systemPrompt, conversation.messages, modelConfig.maxOutputTokens)) {
-      if (chunk.type === "text") {
-        fullResponse += chunk.text;
-        res.write(`data: ${JSON.stringify({ type: "text", text: chunk.text })}\n\n`);
-      } else if (chunk.type === "done") {
-        metadata = chunk;
+    // If still too large for the chosen model, try the Gemini "fast" model which has a much larger context window.
+    const estInputTokens = packed.systemTokens + approxTokensFromMessages(messagesForModel);
+    const currentLimit = (modelConfig.contextWindow || 200000) - (modelConfig.maxOutputTokens || 8192) - 2000;
+    if (estInputTokens > currentLimit) {
+      const fastModel = config.models?.fast;
+      if (fastModel && isProviderAvailable(fastModel.provider) && (fastModel.contextWindow || 0) >= (modelConfig.contextWindow || 0)) {
+        modelKey = "fast";
+        modelConfig = fastModel;
+        routeReason = `Auto: context too large (~${estInputTokens} tokens est) -> ${fastModel.displayName}`;
+        packed = prepareMessagesForModel(conversation.messages, { systemPrompt, modelConfig });
+        messagesForModel = packed.messages;
       }
     }
 
-    // Check if AI requested additional files
+    if (packed.droppedCount > 0) {
+      res.write(`data: ${JSON.stringify({ type: "status", status: `Trimmed ${packed.droppedCount} older messages to fit context` })}\n\n`);
+    }
+
+    res.write(`data: ${JSON.stringify({ type: "start", conversationId: conversation.id, model: modelConfig.displayName, routeReason, filesLoaded: Object.keys(fileContents).length })}\n\n`);
+
+    let fullResponse = "", metadata = {};
+    try {
+      for await (const chunk of streamCompletion(modelConfig, systemPrompt, messagesForModel, modelConfig.maxOutputTokens)) {
+        if (chunk.type === "text") {
+          fullResponse += chunk.text;
+          res.write(`data: ${JSON.stringify({ type: "text", text: chunk.text })}\n\n`);
+        } else if (chunk.type === "done") {
+          metadata = chunk;
+        }
+      }
+    } catch (err) {
+      // If the selected model throws a context-length error, transparently retry with Gemini (huge context) instead of failing the request.
+      if (isTokenLimitError(err)) {
+        const fastModel = config.models?.fast;
+        if (fastModel && isProviderAvailable(fastModel.provider) && modelKey !== "fast") {
+          res.write(`data: ${JSON.stringify({ type: "status", status: `Context too large for ${modelConfig.displayName}. Retrying with ${fastModel.displayName}...` })}\n\n`);
+          modelKey = "fast";
+          modelConfig = fastModel;
+          routeReason = `Auto-retry: token limit -> ${fastModel.displayName}`;
+          res.write(`data: ${JSON.stringify({ type: "start", conversationId: conversation.id, model: modelConfig.displayName, routeReason, filesLoaded: Object.keys(fileContents).length })}\n\n`);
+          packed = prepareMessagesForModel(conversation.messages, { systemPrompt, modelConfig });
+          messagesForModel = packed.messages;
+          fullResponse = "";
+          metadata = {};
+          for await (const chunk of streamCompletion(modelConfig, systemPrompt, messagesForModel, modelConfig.maxOutputTokens)) {
+            if (chunk.type === "text") {
+              fullResponse += chunk.text;
+              res.write(`data: ${JSON.stringify({ type: "text", text: chunk.text })}\n\n`);
+            } else if (chunk.type === "done") {
+              metadata = chunk;
+            }
+          }
+        } else {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
+
+// Check if AI requested additional files
     const requestedFiles = parseFileRequests(fullResponse);
     let additionalFilesLoaded = [];
-    
+    let continuationResponse = "";
+    let metadata2 = {};
+
     if (requestedFiles.length > 0 && repo) {
       res.write(`data: ${JSON.stringify({ type: "status", status: `Loading ${requestedFiles.length} requested files...` })}\n\n`);
-      
-      for (const fp of requestedFiles) {
+
+      for (const fpRaw of requestedFiles) {
+        const fp = String(fpRaw || '').trim();
+        if (!fp) continue;
         if (!fileContents[fp]) {
           try {
             const content = await getFileFromGitHub(repo, fp);
             fileContents[fp] = content;
             additionalFilesLoaded.push(fp);
-            const displayContent = content.length > 5000 ? content.slice(0, 5000) + '\n... (truncated)' : content;
-            fullResponse += `\n\n---\n📄 **${fp}:**\n\`\`\`\n${displayContent}\n\`\`\`\n`;
-            res.write(`data: ${JSON.stringify({ type: "text", text: `\n\n---\n📄 **${fp}:**\n\`\`\`\n${displayContent}\n\`\`\`\n` })}\n\n`);
+
+            // Show a preview to the user, but DO NOT store it in conversation history (prevents token bloat).
+            const preview = content.length > 5000 ? content.slice(0, 5000) + '\n... (preview truncated)' : content;
+            res.write(`data: ${JSON.stringify({ type: "text", text: `\n\n---\n📄 **${fp}:**\n\`\`\`\n${preview}\n\`\`\`\n` })}\n\n`);
           } catch (err) {
-            fullResponse += `\n\n⚠️ Could not load ${fp}: ${err.message}`;
             res.write(`data: ${JSON.stringify({ type: "text", text: `\n\n⚠️ Could not load ${fp}: ${err.message}` })}\n\n`);
           }
         }
       }
-      conversation.loadedFiles = [...new Set([...(conversation.loadedFiles || []), ...additionalFilesLoaded])];
+
+      conversation.loadedFiles = [...new Set([...(Array.isArray(conversation.loadedFiles) ? conversation.loadedFiles : []), ...additionalFilesLoaded])].slice(-24);
     }
 
-    const cost = calculateCost(modelConfig, metadata.inputTokens || 0, metadata.outputTokens || 0);
-    await updateStats(modelKey, metadata.inputTokens || 0, metadata.outputTokens || 0, cost, projectId);
+    // If we loaded files, do one "auto-continue" pass so the model can actually use them.
+    if (additionalFilesLoaded.length > 0 && repo) {
+      res.write(`data: ${JSON.stringify({ type: "status", status: `Continuing with loaded files...` })}\n\n`);
+
+      const systemPrompt2 = buildSystemPrompt(repo, filePaths, stack, fileContents, mode);
+
+      const internalInstruction = [
+        "The system has loaded the following files you requested:",
+        ...additionalFilesLoaded.map(f => `- ${f}`),
+        "",
+        "Continue the work now that these files are available.",
+        "Do not reprint the file contents unless asked.",
+        "If you still need more files, request them using [READ_FILE: path/to/file]."
+      ].join("\n");
+
+      const messages2 = [...conversation.messages, { role: "user", content: internalInstruction, timestamp: new Date().toISOString() }];
+
+      let packed2 = prepareMessagesForModel(messages2, { systemPrompt: systemPrompt2, modelConfig });
+      let messagesForModel2 = packed2.messages;
+
+      // If continuation would overflow this model, switch to fast Gemini.
+      const est2 = packed2.systemTokens + approxTokensFromMessages(messagesForModel2);
+      const limit2 = (modelConfig.contextWindow || 200000) - (modelConfig.maxOutputTokens || 8192) - 2000;
+      if (est2 > limit2) {
+        const fastModel = config.models?.fast;
+        if (fastModel && isProviderAvailable(fastModel.provider) && modelKey !== "fast") {
+          modelKey = "fast";
+          modelConfig = fastModel;
+          routeReason = `Auto: continuation context too large -> ${fastModel.displayName}`;
+          packed2 = prepareMessagesForModel(messages2, { systemPrompt: systemPrompt2, modelConfig });
+          messagesForModel2 = packed2.messages;
+        }
+      }
+
+      try {
+        for await (const chunk of streamCompletion(modelConfig, systemPrompt2, messagesForModel2, modelConfig.maxOutputTokens)) {
+          if (chunk.type === "text") {
+            continuationResponse += chunk.text;
+            res.write(`data: ${JSON.stringify({ type: "text", text: chunk.text })}\n\n`);
+          } else if (chunk.type === "done") {
+            metadata2 = chunk;
+          }
+        }
+      } catch (err) {
+        // If continuation hits token limit, retry with Gemini.
+        if (isTokenLimitError(err)) {
+          const fastModel = config.models?.fast;
+          if (fastModel && isProviderAvailable(fastModel.provider) && modelKey !== "fast") {
+            res.write(`data: ${JSON.stringify({ type: "status", status: `Continuation exceeded context. Retrying with ${fastModel.displayName}...` })}\n\n`);
+            modelKey = "fast";
+            modelConfig = fastModel;
+            routeReason = `Auto-retry: continuation token limit -> ${fastModel.displayName}`;
+            res.write(`data: ${JSON.stringify({ type: "start", conversationId: conversation.id, model: modelConfig.displayName, routeReason, filesLoaded: Object.keys(fileContents).length })}\n\n`);
+            packed2 = prepareMessagesForModel(messages2, { systemPrompt: systemPrompt2, modelConfig });
+            messagesForModel2 = packed2.messages;
+            continuationResponse = "";
+            metadata2 = {};
+            for await (const chunk of streamCompletion(modelConfig, systemPrompt2, messagesForModel2, modelConfig.maxOutputTokens)) {
+              if (chunk.type === "text") {
+                continuationResponse += chunk.text;
+                res.write(`data: ${JSON.stringify({ type: "text", text: chunk.text })}\n\n`);
+              } else if (chunk.type === "done") {
+                metadata2 = chunk;
+              }
+            }
+          } else {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    // Clean stored response: remove file-request tags and do not include file previews.
+    fullResponse = cleanFileRequestTags(fullResponse);
+    if (continuationResponse) {
+      fullResponse = (fullResponse ? fullResponse + "\n\n" : "") + continuationResponse;
+    }
+
+const totalInputTokens = (metadata.inputTokens || 0) + (metadata2.inputTokens || 0);
+    const totalOutputTokens = (metadata.outputTokens || 0) + (metadata2.outputTokens || 0);
+    const cost = calculateCost(modelConfig, totalInputTokens, totalOutputTokens);
+    await updateStats(modelKey, totalInputTokens, totalOutputTokens, cost, projectId);
     if (projectId) await updateProjectCost(projectId, cost);
 
     let projectCreated = null;
@@ -1073,7 +1303,7 @@ app.post("/api/chat", async (req, res) => {
     conversations[conversationIdx] = conversation;
     await writeJson(conversationsPath, conversations);
 
-    res.write(`data: ${JSON.stringify({ type: "done", model: modelConfig.displayName, modelKey, cost, inputTokens: metadata.inputTokens, outputTokens: metadata.outputTokens, projectCreated, additionalFilesLoaded })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: "done", model: modelConfig.displayName, modelKey, cost, inputTokens: totalInputTokens, outputTokens: totalOutputTokens, projectCreated, additionalFilesLoaded })}\n\n`);
     res.end();
   } catch (err) {
     console.error("Chat error", err);
