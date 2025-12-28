@@ -324,7 +324,7 @@ function renderMarkdown(c){
           </div>
           <div class="code-actions">
             <button type="button" onclick="copyCode('${uid}', event)">Copy</button>
-            <button type="button" class="apply-btn" onclick="applyToGitHub('${uid}','${fp}', event)">Create PR</button>
+            <button type="button" class="apply-btn" onclick="applyToGitHub('${uid}','${fp}', event)">Apply</button>
           </div>
         </summary>
         <div class="code-body">
@@ -348,19 +348,11 @@ window.applyToGitHub=async(codeId,suggestedPath,evt)=>{if(evt){evt.preventDefaul
   const btn=codeEl.closest('.msg-content').querySelector(`button[onclick*="${codeId}"].apply-btn`);
   if(btn){btn.disabled=true;btn.textContent='...';}
   try{
-    const res=await fetch('/api/apply-change',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-  repoFullName:repo,
-  filePath,
-  newContent:code,
-  commitMessage:`Update ${filePath} via AI Code Helper`,
-  prTitle:`AI Code Helper: Update ${filePath}`,
-  draft:true
-})});
-const data=await res.json();if(data.error)throw new Error(data.error);
-if(btn){btn.textContent='✓ PR';btn.classList.add('applied')}
-showToast(`PR created for ${repo}!`);
-if(data.prUrl){window.open(data.prUrl,'_blank');}
-  }catch(e){if(btn){btn.disabled=false;btn.textContent='Create PR'}showToast('Failed: '+e.message,'error')}
+    const res=await fetch('/api/apply-change',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({repoFullName:repo,filePath,newContent:code,commitMessage:`Update ${filePath} via AI Code Helper`})});
+    const data=await res.json();if(data.error)throw new Error(data.error);
+    if(btn){btn.textContent='✓ Done';btn.classList.add('applied')}
+    showToast(`Committed to ${repo}!`);
+  }catch(e){if(btn){btn.disabled=false;btn.textContent='Apply'}showToast('Failed: '+e.message,'error')}
 };
 
 $('modelToggle').querySelectorAll('button').forEach(b=>{b.onclick=()=>{$('modelToggle').querySelectorAll('button').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.mode=b.dataset.mode;updateRoutePreview()}});

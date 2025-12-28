@@ -23,8 +23,20 @@ const DATA_DIR = process.env.DATA_DIR || path.join(ROOT_DIR, 'data');
 
 // Model routing/config lives in a JSON file. We bootstrap it into DATA_DIR on first run
 // so admin changes survive redeploys.
-const DEFAULT_CONFIG_PATH = path.join(__dirname, 'models.json');
-const LEGACY_DEFAULT_CONFIG_PATH = path.join(__dirname, 'config', 'models.json');
+const DEFAULT_CONFIG_PATH = path.join(__dirname, 'config', 'models.json');
+const LEGACY_DEFAULT_CONFIG_PATH = path.join(__dirname, 'models.json');
+
+async function getBundledDefaultsPath() {
+  for (const candidate of [DEFAULT_CONFIG_PATH, LEGACY_DEFAULT_CONFIG_PATH]) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // continue
+    }
+  }
+  return null;
+}
 const CONFIG_PATH = path.join(DATA_DIR, 'models.json');
 
 // Secrets (hashed admin password + optional provider keys if you choose to store them)
@@ -57,7 +69,7 @@ async function loadConfig() {
     return JSON.parse(text);
   } catch (err) {
     // If we haven't bootstrapped config yet, fall back to the bundled default.
-    const fallbackPath = DEFAULT_CONFIG_PATH;
+    const fallbackPath = (await getBundledDefaultsPath()) || DEFAULT_CONFIG_PATH;
     const text = await fs.readFile(fallbackPath, 'utf8');
     return JSON.parse(text);
   }
@@ -166,9 +178,11 @@ try {
   await fs.access(CONFIG_PATH);
 } catch (err) {
   try {
-    const base = await fs.readFile(DEFAULT_CONFIG_PATH, 'utf8');
+    const bundled = await getBundledDefaultsPath();
+    if (!bundled) throw new Error('No bundled models.json found under /config.');
+    const base = await fs.readFile(bundled, 'utf8');
     await fs.writeFile(CONFIG_PATH, base, 'utf8');
-    console.log('[boot] created', CONFIG_PATH);
+    console.log(`[boot] created ${CONFIG_PATH} from ${bundled}`);
   } catch (e) {
     console.warn('[boot] failed to bootstrap models.json:', e.message);
   }
@@ -254,129 +268,25 @@ async function createGitHubRepo(name, description, isPrivate = true) {
   return res.json();
 }
 
-async function createOrUpdateFile(repoFullName, filePath, content, message, branch = null) {
+async function createOrUpdateFile(repoFullName, filePath, content, message) {
   const token = await getGitHubToken();
   if (!token) throw new Error("GITHUB_TOKEN is not set");
   const { owner, repo } = parseRepoFullName(repoFullName);
-
-  const baseUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeGitHubPath(filePath)}`;
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeGitHubPath(filePath)}`;
   const headers = { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-
-  const existingUrl = branch ? `${baseUrl}?ref=${encodeURIComponent(branch)}` : baseUrl;
-
+  
   let sha;
   try {
-    const existing = await fetch(existingUrl, { headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` } });
+    const existing = await fetch(url, { headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` } });
     if (existing.ok) sha = (await existing.json()).sha;
   } catch (e) {}
-
-  const body = {
-    message,
-    content: Buffer.from(content, "utf8").toString("base64"),
-  };
+  
+  const body = { message, content: Buffer.from(content, "utf8").toString("base64") };
   if (sha) body.sha = sha;
-  if (branch) body.branch = branch;
-
-  const res = await fetch(baseUrl, { method: "PUT", headers, body: JSON.stringify(body) });
+  
+  const res = await fetch(url, { method: "PUT", headers, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`Failed to create file: ${await res.text()}`);
   return res.json();
-}
-
-async function getRepoInfo(repoFullName) {
-  const token = await getGitHubToken();
-  if (!token) throw new Error("GITHUB_TOKEN is not set");
-  const { owner, repo } = parseRepoFullName(repoFullName);
-  const url = `https://api.github.com/repos/${owner}/${repo}`;
-  const res = await fetch(url, {
-    headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` }
-  });
-  if (!res.ok) throw new Error(`Failed to get repo info: ${await res.text()}`);
-  return res.json();
-}
-
-async function getBranchHeadSha(repoFullName, branch) {
-  const token = await getGitHubToken();
-  if (!token) throw new Error("GITHUB_TOKEN is not set");
-  const { owner, repo } = parseRepoFullName(repoFullName);
-  const url = `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`;
-  const res = await fetch(url, {
-    headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` }
-  });
-  if (!res.ok) throw new Error(`Failed to get branch ref: ${await res.text()}`);
-  const data = await res.json();
-  return data?.object?.sha;
-}
-
-async function createBranchFromSha(repoFullName, branchName, sha) {
-  const token = await getGitHubToken();
-  if (!token) throw new Error("GITHUB_TOKEN is not set");
-  const { owner, repo } = parseRepoFullName(repoFullName);
-  const url = `https://api.github.com/repos/${owner}/${repo}/git/refs`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha })
-  });
-  if (!res.ok) throw new Error(`Failed to create branch: ${await res.text()}`);
-  return res.json();
-}
-
-async function createPullRequest(repoFullName, { title, head, base, body, draft = true }) {
-  const token = await getGitHubToken();
-  if (!token) throw new Error("GITHUB_TOKEN is not set");
-  const { owner, repo } = parseRepoFullName(repoFullName);
-  const url = `https://api.github.com/repos/${owner}/${repo}/pulls`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ title, head, base, body, draft })
-  });
-  if (!res.ok) throw new Error(`Failed to create PR: ${await res.text()}`);
-  return res.json();
-}
-
-function makeSafeBranchName(prefix = "ai-helper") {
-  const ts = new Date().toISOString().replace(/[:.]/g, "-");
-  const rand = Math.random().toString(36).slice(2, 7);
-  return `${prefix}/${ts}-${rand}`;
-}
-
-async function applyChangeAsPullRequest({ repoFullName, filePath, newContent, commitMessage, prTitle, prBody, draft = true }) {
-  const repoInfo = await getRepoInfo(repoFullName);
-  const baseBranch = repoInfo.default_branch || "main";
-  const baseSha = await getBranchHeadSha(repoFullName, baseBranch);
-
-  let branchName = makeSafeBranchName("ai-change");
-  try {
-    await createBranchFromSha(repoFullName, branchName, baseSha);
-  } catch (e) {
-    branchName = makeSafeBranchName("ai-change");
-    await createBranchFromSha(repoFullName, branchName, baseSha);
-  }
-
-  const commitMsg = commitMessage || `Update ${filePath} via AI Code Helper`;
-  const writeResult = await createOrUpdateFile(repoFullName, filePath, newContent, commitMsg, branchName);
-
-  const title = prTitle || `AI Code Helper: Update ${filePath}`;
-  const body = prBody || [
-    `This PR was generated by AI Code Helper.`,
-    ``,
-    `**File:** \`${filePath}\``,
-    ``,
-    `If this looks good, merge it to apply the change.`,
-  ].join("\n");
-
-  const pr = await createPullRequest(repoFullName, { title, head: branchName, base: baseBranch, body, draft });
-
-  return {
-    path: writeResult.content?.path || filePath,
-    branchName,
-    baseBranch,
-    commitSha: writeResult.commit?.sha,
-    commitUrl: writeResult.commit?.html_url,
-    prNumber: pr.number,
-    prUrl: pr.html_url,
-  };
 }
 
 function detectStack(filePaths) {
@@ -433,13 +343,6 @@ function selectFilesToAutoLoad(filePaths, stack, maxFiles = 20) {
   }
   
   return selected.slice(0, maxFiles);
-}
-
-
-function approxTokens(text) {
-  // Very rough heuristic: ~4 characters per token for mixed English/code.
-  if (!text) return 0;
-  return Math.ceil(text.length / 4);
 }
 
 function parseFileRequests(response) {
@@ -510,38 +413,10 @@ When modifying code, show the complete file:
 
   if (Object.keys(fileContents).length > 0) {
     prompt += "\n## Pre-loaded Files\n";
-    const budgetTokens = parseInt(process.env.CONTEXT_BUDGET_TOKENS || "140000", 10);
-    let usedTokens = approxTokens(prompt);
-    const omitted = [];
-
     for (const [fp, content] of Object.entries(fileContents)) {
       const ext = fp.split('.').pop();
-      const fileTokens = approxTokens(content);
-
-      // All-or-omit: never partially truncate code.
-      if (usedTokens + fileTokens > budgetTokens) {
-        omitted.push(fp);
-        continue;
-      }
-
-      prompt += `### ${fp}
-\`\`\`${ext}
-${content}
-\`\`\`
-
-`;
-      usedTokens += fileTokens;
-    }
-
-    if (omitted.length) {
-      prompt += `
-### Omitted pre-loaded files (context budget)
-` +
-        omitted.map(f => `- ${f}`).join("\n") +
-        `
-
-If you need one of these, request it explicitly using: [READ_FILE: path/to/file]
-`;
+      const truncated = content.length > 12000 ? content.slice(0, 12000) + "\n... (truncated)" : content;
+      prompt += `### ${fp}\n\`\`\`${ext}\n${truncated}\n\`\`\`\n\n`;
     }
   }
 
@@ -751,7 +626,9 @@ app.post("/api/config/models", requireAdminAuth, async (req, res) => {
 
 app.post("/api/config/reset", requireAdminAuth, async (req, res) => {
   try{
-    const base = await fs.readFile(DEFAULT_CONFIG_PATH, 'utf8');
+    const bundled = await getBundledDefaultsPath();
+    if (!bundled) throw new Error("No bundled models.json found under /config.");
+    const base = await fs.readFile(bundled, 'utf8');
     const parsed = JSON.parse(base);
     await saveConfig(parsed);
     const meta = await configMeta(parsed);
@@ -917,90 +794,44 @@ app.post("/api/chat", async (req, res) => {
       } catch (err) { console.warn("Could not list files", err.message); }
     }
 
-    let systemPrompt = buildSystemPrompt(repo, filePaths, stack, fileContents, mode);
+    const systemPrompt = buildSystemPrompt(repo, filePaths, stack, fileContents, mode);
     conversation.messages.push({ role: "user", content: message, timestamp: new Date().toISOString() });
 
     res.write(`data: ${JSON.stringify({ type: "start", conversationId: conversation.id, model: modelConfig.displayName, modelKey, routeReason, filesLoaded: Object.keys(fileContents).length })}\n\n`);
 
-    let fullResponse = "";
-    let metadata = { inputTokens: 0, outputTokens: 0 };
+    let fullResponse = "", metadata = {};
+    for await (const chunk of streamCompletion(modelConfig, systemPrompt, conversation.messages, modelConfig.maxOutputTokens)) {
+      if (chunk.type === "text") {
+        fullResponse += chunk.text;
+        res.write(`data: ${JSON.stringify({ type: "text", text: chunk.text })}\n\n`);
+      } else if (chunk.type === "done") {
+        metadata = chunk;
+      }
+    }
 
-    const maxAutoPasses = parseInt(process.env.AUTO_FILE_PASSES || "2", 10); // number of additional passes after the first
-    const maxRequestedFilesPerPass = parseInt(process.env.MAX_REQUESTED_FILES_PER_PASS || "8", 10);
+    // Check if AI requested additional files
+    const requestedFiles = parseFileRequests(fullResponse);
     let additionalFilesLoaded = [];
-
-    for (let pass = 0; pass <= maxAutoPasses; pass++) {
-      let passResponse = "", passMeta = {};
-
-      for await (const chunk of streamCompletion(modelConfig, systemPrompt, conversation.messages, modelConfig.maxOutputTokens)) {
-        if (chunk.type === "text") {
-          passResponse += chunk.text;
-          res.write(`data: ${JSON.stringify({ type: "text", text: chunk.text })}
-
-`);
-        } else if (chunk.type === "done") {
-          passMeta = chunk;
-        }
-      }
-
-      fullResponse += passResponse;
-
-      // Accumulate usage across passes so cost tracking remains accurate.
-      metadata.inputTokens += passMeta.inputTokens || 0;
-      metadata.outputTokens += passMeta.outputTokens || 0;
-
-      // If the assistant asked to read more files, load them and run another pass automatically.
-      const requestedFiles = parseFileRequests(passResponse).slice(0, maxRequestedFilesPerPass);
-
-      if (requestedFiles.length > 0 && repo && pass < maxAutoPasses) {
-        const toLoad = requestedFiles.filter(fp => fp && !fileContents[fp]);
-
-        if (toLoad.length) {
-          res.write(`data: ${JSON.stringify({ type: "status", status: `Loading ${toLoad.length} requested files...` })}
-
-`);
-
-          for (const fp of toLoad) {
-            try {
-              const content = await getFileFromGitHub(repo, fp);
-              fileContents[fp] = content;
-              additionalFilesLoaded.push(fp);
-
-              // Tell the user we loaded the file, but do not dump file contents into chat by default.
-              res.write(`data: ${JSON.stringify({ type: "text", text: `
-
-📥 Loaded: **${fp}**` })}
-
-`);
-              fullResponse += `
-
-📥 Loaded: **${fp}**`;
-            } catch (err) {
-              res.write(`data: ${JSON.stringify({ type: "text", text: `
-
-⚠️ Could not load ${fp}: ${err.message}` })}
-
-`);
-              fullResponse += `
-
-⚠️ Could not load ${fp}: ${err.message}`;
-            }
+    
+    if (requestedFiles.length > 0 && repo) {
+      res.write(`data: ${JSON.stringify({ type: "status", status: `Loading ${requestedFiles.length} requested files...` })}\n\n`);
+      
+      for (const fp of requestedFiles) {
+        if (!fileContents[fp]) {
+          try {
+            const content = await getFileFromGitHub(repo, fp);
+            fileContents[fp] = content;
+            additionalFilesLoaded.push(fp);
+            const displayContent = content.length > 5000 ? content.slice(0, 5000) + '\n... (truncated)' : content;
+            fullResponse += `\n\n---\n📄 **${fp}:**\n\`\`\`\n${displayContent}\n\`\`\`\n`;
+            res.write(`data: ${JSON.stringify({ type: "text", text: `\n\n---\n📄 **${fp}:**\n\`\`\`\n${displayContent}\n\`\`\`\n` })}\n\n`);
+          } catch (err) {
+            fullResponse += `\n\n⚠️ Could not load ${fp}: ${err.message}`;
+            res.write(`data: ${JSON.stringify({ type: "text", text: `\n\n⚠️ Could not load ${fp}: ${err.message}` })}\n\n`);
           }
-
-          conversation.loadedFiles = [...new Set([...(conversation.loadedFiles || []), ...additionalFilesLoaded])];
-
-          // Rebuild system prompt so the next pass includes the newly loaded files.
-          systemPrompt = buildSystemPrompt(repo, filePaths, stack, fileContents, mode);
-
-          res.write(`data: ${JSON.stringify({ type: "status", status: "Continuing with the newly loaded files..." })}
-
-`);
-          continue;
         }
       }
-
-      // No file requests (or none to load) - we're done.
-      break;
+      conversation.loadedFiles = [...new Set([...(conversation.loadedFiles || []), ...additionalFilesLoaded])];
     }
 
     const cost = calculateCost(modelConfig, metadata.inputTokens || 0, metadata.outputTokens || 0);
@@ -1041,26 +872,12 @@ app.post("/api/chat", async (req, res) => {
 });
 
 app.post("/api/apply-change", async (req, res) => {
-  const { repoFullName, filePath, newContent, commitMessage, prTitle, prBody, draft } = req.body;
-  if (!repoFullName || !filePath || newContent === undefined) {
-    return res.status(400).json({ error: "repoFullName, filePath, newContent required" });
-  }
-
+  const { repoFullName, filePath, newContent, commitMessage } = req.body;
+  if (!repoFullName || !filePath || newContent === undefined) return res.status(400).json({ error: "repoFullName, filePath, newContent required" });
   try {
-    const result = await applyChangeAsPullRequest({
-      repoFullName,
-      filePath,
-      newContent,
-      commitMessage,
-      prTitle,
-      prBody,
-      draft: draft !== undefined ? !!draft : true
-    });
-
-    res.json({ ok: true, ...result });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    const result = await createOrUpdateFile(repoFullName, filePath, newContent, commitMessage || `Update ${filePath}`);
+    res.json({ ok: true, path: result.content?.path || filePath, commitSha: result.commit?.sha, commitUrl: result.commit?.html_url });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.listen(PORT, "0.0.0.0", () => {

@@ -74,33 +74,98 @@ export async function* streamCompletion(modelConfig, systemPrompt, messages, max
 
   if (provider === "openai") {
     if (!openaiClient) throw new Error("OpenAI not configured");
-    
+
+    // Prefer the Responses API when available (newer OpenAI models, including GPT-5, are happiest here).
+    const inputMessages = messages.map((m) => ({
+      role: m.role,
+      content: typeof m.content === 'string' ? m.content : String(m.content ?? ''),
+    }));
+
+    if (openaiClient.responses?.create) {
+      try {
+        const stream = await openaiClient.responses.create({
+          model,
+          instructions: systemPrompt,
+          input: inputMessages,
+          stream: true,
+          ...(maxTokens ? { max_output_tokens: maxTokens } : {}),
+        });
+
+        let inputTokens = 0;
+        let outputTokens = 0;
+        let finishReason = 'stop';
+
+        for await (const event of stream) {
+          if (event?.type === 'response.output_text.delta') {
+            if (event.delta) yield { type: 'text', text: event.delta };
+          } else if (event?.type === 'response.completed') {
+            const usage = event.response?.usage;
+            if (usage) {
+              inputTokens = usage.input_tokens ?? inputTokens;
+              outputTokens = usage.output_tokens ?? outputTokens;
+            }
+            finishReason = event.response?.status ?? finishReason;
+          } else if (event?.type === 'response.failed') {
+            const msg = event.response?.error?.message || 'OpenAI response failed';
+            throw new Error(msg);
+          } else if (event?.type === 'error') {
+            const msg = event.error?.message || 'OpenAI streaming error';
+            throw new Error(msg);
+          }
+        }
+
+        yield {
+          type: 'done',
+          inputTokens,
+          outputTokens,
+          finishReason,
+        };
+        return;
+      } catch (err) {
+        console.warn('[openai] Responses API failed, falling back to chat.completions:', err?.message || err);
+      }
+    }
+
+    // Fallback: Chat Completions streaming
     const openaiMessages = [
-      { role: "system", content: systemPrompt },
-      ...messages.map(m => ({ role: m.role, content: m.content }))
+      { role: 'system', content: systemPrompt },
+      ...inputMessages,
     ];
 
+    const isGpt5 = typeof model === 'string' && model.startsWith('gpt-5');
     const stream = await openaiClient.chat.completions.create({
       model,
       messages: openaiMessages,
-      max_tokens: maxTokens,
       stream: true,
-      stream_options: { include_usage: true }
+      stream_options: { include_usage: true },
+      ...(isGpt5
+        ? (maxTokens ? { max_completion_tokens: maxTokens } : {})
+        : (maxTokens ? { max_tokens: maxTokens } : {})),
     });
 
-    let inputTokens = 0, outputTokens = 0;
-    for await (const chunk of stream) {
-      if (chunk.choices?.[0]?.delta?.content) {
-        yield { type: "text", text: chunk.choices[0].delta.content };
-      }
-      if (chunk.usage) {
-        inputTokens = chunk.usage.prompt_tokens || 0;
-        outputTokens = chunk.usage.completion_tokens || 0;
-      }
-    }
-    yield { type: "done", inputTokens, outputTokens };
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let finishReason = 'stop';
 
-  } else if (provider === "anthropic") {
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content;
+      if (delta) yield { type: 'text', text: delta };
+
+      const usage = chunk.usage;
+      if (usage) {
+        inputTokens = usage.prompt_tokens ?? inputTokens;
+        outputTokens = usage.completion_tokens ?? outputTokens;
+      }
+
+      const reason = chunk.choices?.[0]?.finish_reason;
+      if (reason) finishReason = reason;
+    }
+
+    yield { type: 'done', inputTokens, outputTokens, finishReason };
+    return;
+  }
+
+if (provider === "anthropic") {
     if (!anthropicClient) throw new Error("Anthropic not configured");
 
     const anthropicMessages = messages.map(m => ({ role: m.role, content: m.content }));
