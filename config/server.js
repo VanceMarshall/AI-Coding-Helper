@@ -289,6 +289,197 @@ async function createOrUpdateFile(repoFullName, filePath, content, message) {
   return res.json();
 }
 
+
+// --- Apply-as-PR v2 (safe, deterministic) ---------------------------------
+// We never commit directly to the default branch. We always:
+//  1) create a new branch from the repo's default branch
+//  2) write ALL requested file changes to that branch in a single commit
+//  3) open ONE draft PR back to the default branch
+//
+// This is intentionally implemented using Git Data APIs (trees/commits/refs)
+// so multi-file patches are atomic and do not require per-file SHA handling.
+
+function sanitizeBranchToken(input) {
+  return (input || "unknown")
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "unknown";
+}
+
+function normalizeRepoPath(p) {
+  const raw = (p || "").toString().trim().replace(/\\/g, "/");
+  const stripped = raw.replace(/^\.(\/|\\)/, "").replace(/^\//, "");
+  const normalized = stripped.split("/").filter(Boolean).join("/");
+  if (!normalized) throw new Error("Missing file path");
+  if (normalized.includes("..")) throw new Error(`Invalid path (..): ${p}`);
+  if (normalized.length > 400) throw new Error("File path too long");
+  return normalized;
+}
+
+async function fetchGitHubApi(url, token, { method = "GET", body, headers = {} } = {}) {
+  const h = { Accept: "application/vnd.github+json", ...headers };
+  if (token) h.Authorization = `Bearer ${token}`;
+  if (body && !h["Content-Type"]) h["Content-Type"] = "application/json";
+
+  const res = await fetch(url, { method, headers: h, body: body ? JSON.stringify(body) : undefined });
+  const text = await res.text();
+
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+
+  if (!res.ok) {
+    const msg = json?.message || text || `GitHub API error ${res.status}`;
+    throw new Error(`GitHub API error ${res.status}: ${msg}`);
+  }
+  return json;
+}
+
+async function getRepoInfo(repoFullName, token) {
+  const { owner, repo } = parseRepoFullName(repoFullName);
+  if (!owner || !repo) throw new Error("Invalid repoFullName (expected owner/repo)");
+  const info = await fetchGitHubApi(`https://api.github.com/repos/${owner}/${repo}`, token);
+  return { owner, repo, defaultBranch: info.default_branch || "main" };
+}
+
+async function createDraftPrFromPatches({ repoFullName, conversationId, patches, prTitle, prBody, commitMessage }) {
+  const token = await getGitHubToken();
+  if (!token) throw new Error("GITHUB_TOKEN is not set");
+
+  if (!Array.isArray(patches) || patches.length < 1) throw new Error("No patches to apply");
+  if (patches.length > 50) throw new Error("Too many files in one PR (max 50)");
+
+  // Normalize + validate patches
+  const normalized = [];
+  const seen = new Set();
+  let totalBytes = 0;
+
+  for (const p of patches) {
+    const action = (p?.action || "upsert").toLowerCase();
+    const filePath = normalizeRepoPath(p?.filePath);
+    if (seen.has(filePath)) {
+      throw new Error(`Duplicate file path in patch set: ${filePath}`);
+    }
+    seen.add(filePath);
+
+    if (action !== "upsert" && action !== "delete") {
+      throw new Error(`Invalid patch action for ${filePath}: ${action}`);
+    }
+
+    const content = action === "delete" ? null : (p?.content ?? p?.newContent ?? "");
+    if (action === "upsert" && typeof content !== "string") throw new Error(`Invalid content for ${filePath}`);
+
+    const bytes = action === "delete" ? 0 : Buffer.byteLength(content, "utf8");
+    totalBytes += bytes;
+
+    // Safety limits - keep runtime stable
+    if (bytes > 1_500_000) throw new Error(`File too large for safe apply (${filePath}). Limit is 1.5MB.`);
+    normalized.push({ filePath, action, content, bytes });
+  }
+
+  if (totalBytes > 4_000_000) throw new Error("Patch set too large for safe apply (limit 4MB total).");
+
+  const { owner, repo, defaultBranch } = await getRepoInfo(repoFullName, token);
+
+  // Base commit SHA for default branch
+  const baseRef = await fetchGitHubApi(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(defaultBranch)}`, token);
+  const baseCommitSha = baseRef?.object?.sha;
+  if (!baseCommitSha) throw new Error("Could not resolve default branch SHA");
+
+  // Base tree SHA
+  const baseCommit = await fetchGitHubApi(`https://api.github.com/repos/${owner}/${repo}/git/commits/${baseCommitSha}`, token);
+  const baseTreeSha = baseCommit?.tree?.sha;
+  if (!baseTreeSha) throw new Error("Could not resolve base tree SHA");
+
+  // Branch name
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const convToken = sanitizeBranchToken(conversationId);
+  let branchName = `ai/${convToken}-${ts}`;
+
+  // Create branch ref (handle collisions)
+  const refBase = `refs/heads/${branchName}`;
+  try {
+    await fetchGitHubApi(`https://api.github.com/repos/${owner}/${repo}/git/refs`, token, {
+      method: "POST",
+      body: { ref: refBase, sha: baseCommitSha }
+    });
+  } catch (e) {
+    // If branch exists, add random suffix once
+    branchName = `ai/${convToken}-${ts}-${Math.random().toString(36).slice(2, 7)}`;
+    await fetchGitHubApi(`https://api.github.com/repos/${owner}/${repo}/git/refs`, token, {
+      method: "POST",
+      body: { ref: `refs/heads/${branchName}`, sha: baseCommitSha }
+    });
+  }
+
+  // Create blobs (for upserts only)
+  const blobShas = new Map();
+  for (const p of normalized) {
+    if (p.action === "delete") continue;
+    const blob = await fetchGitHubApi(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, token, {
+      method: "POST",
+      body: {
+        content: Buffer.from(p.content, "utf8").toString("base64"),
+        encoding: "base64"
+      }
+    });
+    blobShas.set(p.filePath, blob.sha);
+  }
+
+  // Create new tree
+  const tree = normalized.map((p) => {
+    if (p.action === "delete") {
+      return { path: p.filePath, mode: "100644", type: "blob", sha: null };
+    }
+    return { path: p.filePath, mode: "100644", type: "blob", sha: blobShas.get(p.filePath) };
+  });
+
+  const newTree = await fetchGitHubApi(`https://api.github.com/repos/${owner}/${repo}/git/trees`, token, {
+    method: "POST",
+    body: { base_tree: baseTreeSha, tree }
+  });
+
+  // Commit
+  const commit = await fetchGitHubApi(`https://api.github.com/repos/${owner}/${repo}/git/commits`, token, {
+    method: "POST",
+    body: {
+      message: commitMessage || `AI Apply: ${normalized.length} file(s)`,
+      tree: newTree.sha,
+      parents: [baseCommitSha]
+    }
+  });
+
+  // Update branch ref
+  await fetchGitHubApi(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(branchName)}`, token, {
+    method: "PATCH",
+    body: { sha: commit.sha, force: false }
+  });
+
+  // Create draft PR
+  const pr = await fetchGitHubApi(`https://api.github.com/repos/${owner}/${repo}/pulls`, token, {
+    method: "POST",
+    body: {
+      title: prTitle || `AI Apply (${normalized.length} file${normalized.length === 1 ? "" : "s"})`,
+      head: branchName,
+      base: defaultBranch,
+      body: prBody || `Draft PR created by AI Code Helper.\n\nConversation: ${conversationId || "unknown"}`,
+      draft: true
+    }
+  });
+
+  return {
+    prUrl: pr.html_url,
+    prNumber: pr.number,
+    branchName,
+    baseBranch: defaultBranch,
+    commitSha: commit.sha,
+    files: normalized.map(({ filePath, action, bytes }) => ({ filePath, action, bytes }))
+  };
+}
+// --------------------------------------------------------------------------
+
 function detectStack(filePaths) {
   const files = new Set(filePaths || []);
   const has = (n) => files.has(n) || [...files].some((p) => p.endsWith("/" + n));
@@ -871,13 +1062,47 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
-app.post("/api/apply-change", async (req, res) => {
-  const { repoFullName, filePath, newContent, commitMessage } = req.body;
-  if (!repoFullName || !filePath || newContent === undefined) return res.status(400).json({ error: "repoFullName, filePath, newContent required" });
+app.post("/api/apply-pr", async (req, res) => {
   try {
-    const result = await createOrUpdateFile(repoFullName, filePath, newContent, commitMessage || `Update ${filePath}`);
-    res.json({ ok: true, path: result.content?.path || filePath, commitSha: result.commit?.sha, commitUrl: result.commit?.html_url });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const { repoFullName, conversationId, patches, prTitle, prBody, commitMessage } = req.body || {};
+    if (!repoFullName) return res.status(400).json({ error: "repoFullName required" });
+    if (!Array.isArray(patches) || patches.length < 1) return res.status(400).json({ error: "patches[] required" });
+
+    const result = await createDraftPrFromPatches({
+      repoFullName,
+      conversationId,
+      patches,
+      prTitle,
+      prBody,
+      commitMessage
+    });
+
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Backwards-compatible single-file apply endpoint (legacy UI).
+// SAFETY: this no longer commits to the default branch; it creates a draft PR.
+app.post("/api/apply-change", async (req, res) => {
+  try {
+    const { repoFullName, conversationId, filePath, newContent, commitMessage } = req.body || {};
+    if (!repoFullName || !filePath || newContent === undefined) {
+      return res.status(400).json({ error: "repoFullName, filePath, newContent required" });
+    }
+    const result = await createDraftPrFromPatches({
+      repoFullName,
+      conversationId,
+      patches: [{ filePath, action: "upsert", content: newContent }],
+      prTitle: `AI Apply: ${filePath}`,
+      prBody: `Draft PR created by AI Code Helper (legacy apply).\n\nConversation: ${conversationId || "unknown"}`,
+      commitMessage: commitMessage || `AI Apply: ${filePath}`
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.listen(PORT, "0.0.0.0", () => {

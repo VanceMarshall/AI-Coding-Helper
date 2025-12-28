@@ -131,6 +131,29 @@ details.code-block[open] .code-caret{transform:rotate(90deg)}
     .modal-footer button{padding:10px 20px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer}
     .btn-secondary{background:var(--bg3);border:1px solid var(--border);color:var(--text)}
     .btn-primary{background:var(--accent);border:none;color:var(--bg)}
+
+    /* Patch Preview (Apply-as-PR v2) */
+    .patch-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+    .patch-controls label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)}
+    .patch-summary{font-size:12px;color:var(--text3)}
+    .patch-list{display:flex;flex-direction:column;gap:8px}
+    .patch-item{border:1px solid var(--border);background:var(--bg3);border-radius:8px;padding:10px;display:flex;gap:10px;align-items:flex-start}
+    .patch-item input[type=checkbox]{margin-top:3px}
+    .patch-item .meta{flex:1;min-width:0}
+    .patch-item .path{font-family:var(--mono);font-size:13px;color:var(--text);word-break:break-word}
+    .patch-item .sub{font-size:11px;color:var(--text3);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .badge{font-size:10px;padding:2px 6px;border-radius:6px;background:var(--bg4);color:var(--text2);border:1px solid var(--border)}
+    .badge.added{border-color:rgba(63,185,80,.5);color:var(--green)}
+    .badge.modified{border-color:rgba(88,166,255,.5);color:var(--accent)}
+    .badge.deleted{border-color:rgba(248,81,73,.5);color:var(--red)}
+    .badge.risk{border-color:rgba(210,153,34,.6);color:var(--yellow)}
+    .mini-btn{background:none;border:1px solid var(--border);color:var(--text2);border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer}
+    .mini-btn:hover{background:var(--bg4);color:var(--text)}
+    .patch-warnings{margin-top:10px;color:var(--yellow);font-size:12px;white-space:pre-wrap}
+    .patch-result{margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);font-size:13px}
+    .patch-result a{color:var(--accent);text-decoration:none}
+    .patch-result a:hover{text-decoration:underline}
+
     .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:12px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;display:none;z-index:2000;max-width:90%;text-align:center}
     .toast.success{border-left:3px solid var(--green)}.toast.error{border-left:3px solid var(--red)}
     .streaming-dot{width:6px;height:6px;background:var(--accent);border-radius:50%;animation:pulse 1.5s infinite;display:inline-block}
@@ -234,8 +257,60 @@ details.code-block[open] .code-caret{transform:rotate(90deg)}
       <div class="modal-footer"><button class="btn-secondary" id="cancelFiles">Cancel</button><button class="btn-primary" id="confirmFiles">Add</button></div>
     </div>
   </div>
+
+  <div class="modal" id="patchModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>🧩 Patch Preview</h3>
+        <button class="modal-close" id="closePatchModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="patch-controls">
+          <label><input type="checkbox" id="allowPartialToggle"> Allow partial edits</label>
+          <div class="patch-summary" id="patchSummary"></div>
+        </div>
+        <div class="patch-list" id="patchList"></div>
+        <div class="patch-warnings" id="patchWarnings"></div>
+        <div class="patch-result" id="patchResult" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="cancelPatch">Cancel</button>
+        <button class="btn-primary" id="createPrBtn">Create Draft PR</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 marked.setOptions({highlight:(c,l)=>l&&hljs.getLanguage(l)?hljs.highlight(c,{language:l}).value:hljs.highlightAuto(c).value,breaks:true,gfm:true});
+
+
+function renderMarkdown(md){
+  const h=marked.parse(md||'');
+  return h.replace(/<pre><code class="language-([a-z0-9]+) hljs">([\s\S]*?)<\/code><\/pre>/gi,(m,lang,code)=>{
+    const decoded=code.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&');
+    const explicitPath=extractFilePathFromCode(decoded);
+    const fp=explicitPath||detectFilePath(decoded,lang);
+    const label=explicitPath?fp:(fp+' (?)');
+    const uid='code-'+Math.random().toString(36).slice(2,9);
+    return `<details class="code-block" open>
+      <summary class="code-header">
+        <div class="code-left">
+          <span class="code-caret">▶</span>
+          <span class="code-lang">${escapeHtml(label)}</span>
+          <span class="code-filename">${escapeHtml(lang)}</span>
+        </div>
+        <div class="code-actions">
+          <button type="button" class="copy-btn" onclick="copyCode('${uid}', event)">Copy</button>
+          <button type="button" class="apply-btn" data-codeid="${uid}" onclick="openPatchPreviewFromCode('${uid}', event)">Create PR</button>
+        </div>
+      </summary>
+      <div class="code-body">
+        <pre><code id="${uid}" class="language-${lang} hljs" data-suggested-path="${escapeHtml(fp)}">${code}</code></pre>
+      </div>
+    </details>`;
+  });
+}
+
 const state={conversationId:null,conversations:[],loadedFiles:[],repoFiles:[],selectedFiles:new Set(),config:null,mode:'auto',chatMode:'building',totalCost:0,streaming:false};
 const $=id=>document.getElementById(id);
 function showToast(m,t='success'){const e=$('toast');e.textContent=m;e.className=`toast ${t}`;e.style.display='block';setTimeout(()=>e.style.display='none',4000)}
@@ -297,63 +372,268 @@ function appendMessage(role,content,model='',animate=true){
   $('messagesInner').appendChild(msg);return msg;
 }
 
-function detectFilePath(code,lang){
-  const lines=code.split('\n').slice(0,5);
-  for(const line of lines){const m=line.match(/(?:\/\/|#|\/\*|\*|<!--)\s*(?:file:?\s*)?([a-zA-Z0-9_\-./]+\.[a-zA-Z0-9]+)/i);if(m)return m[1]}
-  const p={'javascript':'script.js','js':'script.js','typescript':'script.ts','ts':'script.ts','jsx':'component.jsx','tsx':'component.tsx','python':'script.py','py':'script.py','html':'index.html','css':'styles.css','json':'data.json'};
+
+function guessFilePathByLang(lang){
+  const p={'javascript':'script.js','js':'script.js','typescript':'script.ts','ts':'script.ts','jsx':'component.jsx','tsx':'component.tsx','python':'script.py','py':'script.py','html':'index.html','css':'styles.css','json':'data.json','md':'README.md'};
   return p[lang]||'file.txt';
 }
 
-function renderMarkdown(c){
-  if(!c)return'';
-  let h=marked.parse(c);
-
-  // Wrap fenced code blocks into collapsible <details>, collapsed by default.
-  // Keeps Copy/Apply buttons accessible even while collapsed.
-  h=h.replace(/<pre><code class="language-(\w+)">([\s\S]*?)<\/code><\/pre>/g,(match,lang,code)=>{
-    const decoded=code.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"');
-    const fp=detectFilePath(decoded,lang);
-    const uid='code-'+Math.random().toString(36).substr(2,9);
-
-    return `
-      <details class="code-block">
-        <summary class="code-header">
-          <div class="code-left">
-            <span class="code-caret">▶</span>
-            <span class="code-lang">${fp}</span>
-          </div>
-          <div class="code-actions">
-            <button type="button" onclick="copyCode('${uid}', event)">Copy</button>
-            <button type="button" class="apply-btn" onclick="applyToGitHub('${uid}','${fp}', event)">Apply</button>
-          </div>
-        </summary>
-        <div class="code-body">
-          <pre><code id="${uid}" class="language-${lang} hljs">${code}</code></pre>
-        </div>
-      </details>
-    `.trim();
-  });
-
-  return h;
+function extractFilePathFromCode(code){
+  const lines=code.split('\n').slice(0,30);
+  const re1=/^\s*(?:\/\/|#|;|<!--|\/\*|\*)\s*(?:filepath|file path|file|path)\s*:\s*([^\s]+)\s*(?:-->|\*\/)?\s*$/i;
+  const re2=/^\s*(?:\/\/|#|;|<!--|\/\*|\*)\s*([a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)+\.[a-zA-Z0-9]+)\s*(?:-->|\*\/)?\s*$/;
+  for(const line of lines){
+    let m=line.match(re1);if(m)return m[1];
+    m=line.match(re2);if(m)return m[1];
+  }
+  return null;
 }
 
-window.copyCode=(id,evt)=>{if(evt){evt.preventDefault();evt.stopPropagation();}const el=document.getElementById(id);if(el){navigator.clipboard.writeText(el.textContent);showToast('Copied!')}};
+function looksLikeDiff(code){
+  return /(^|\n)(@@|\+\+\+ |--- )/m.test(code);
+}
 
-window.applyToGitHub=async(codeId,suggestedPath,evt)=>{if(evt){evt.preventDefault();evt.stopPropagation();}
+function looksPartial(code){
+  const markers=[
+    /(^|\n)\s*\.{3}\s*$/m,
+    /\(truncated\)/i,
+    /\b(existing code|rest of the file|your code here|insert here|fill in|snip)\b/i,
+    /\bTODO:\s*(?:fill|replace|implement)\b/i
+  ];
+  return markers.some(r=>r.test(code));
+}
+
+function detectFilePath(code,lang){
+  return extractFilePathFromCode(code)||guessFilePathByLang(lang);
+}
+
+function bytesToHuman(n){
+  if(n<1024)return `${n} B`;
+  if(n<1024*1024)return `${(n/1024).toFixed(1)} KB`;
+  return `${(n/1024/1024).toFixed(2)} MB`;
+}
+
+function inferChangeType(filePath){
+  if(!filePath)return 'unknown';
+  if(Array.isArray(state.repoFiles)&&state.repoFiles.includes(filePath))return 'modified';
+  return 'added';
+}
+
+function assessCodeBlock(code, explicitPath){
+  const warnings=[];
+  const deletes=selectedNow.filter(p=>p.action==='delete');
+  if(deletes.length)warnings.push(`⚠️ Deleting ${deletes.length} file(s). Double-check paths before proceeding.`);
+  const isDiff=looksLikeDiff(code);
+  const isPartial=looksPartial(code);
+  if(!explicitPath)warnings.push('Missing filepath marker (example: // filepath: src/app.js)');
+  if(isDiff)warnings.push('Looks like a diff/patch, not a full file');
+  if(isPartial)warnings.push('Contains placeholders/ellipsis; may be partial');
+  const isFull=!isDiff && !isPartial;
+  return { isFull, warnings };
+}
+
+function collectPatchesFromMessage(messageEl){
+  const blocks=[...messageEl.querySelectorAll('details.code-block')];
+  const patches=[];
+  for(const b of blocks){
+    const codeEl=b.querySelector('code[id]');
+    if(!codeEl)continue;
+    const code=codeEl.textContent||'';
+    const lang=(codeEl.className.match(/language-([a-z0-9]+)/i)||[])[1]||'';
+    const explicitPath=extractFilePathFromCode(code);
+    const suggested=codeEl.getAttribute('data-suggested-path')||'';
+    const guessed=suggested||guessFilePathByLang(lang);
+    const filePath=(explicitPath||guessed||'').trim();
+    const bytes=(new TextEncoder()).encode(code).length;
+    const {isFull,warnings}=assessCodeBlock(code, explicitPath);
+    const changeType=inferChangeType(filePath);
+
+    const itemWarnings=[...warnings];
+    if(!filePath)itemWarnings.push('Missing file path');
+    if(bytes>200_000)itemWarnings.push(`Large file (${bytesToHuman(bytes)})`);
+    patches.push({ codeId:codeEl.id, filePath, explicitPath:!!explicitPath, action:'upsert', content:code, bytes, isFull, warnings:itemWarnings, selected:true, changeType });
+  }
+
+  // Duplicate path warning
+  const seen={};
+  patches.forEach((p)=>{
+    if(!p.filePath)return;
+    if(seen[p.filePath]){p.warnings.push('Duplicate file path in selection');seen[p.filePath].warnings.push('Duplicate file path in selection');}
+    else seen[p.filePath]=p;
+  });
+
+  return patches;
+}
+
+// Patch Preview modal state
+const patchState={ patches:[], messageEl:null };
+
+function openPatchModal(patches, messageEl){
+  patchState.patches=patches;
+  patchState.messageEl=messageEl;
+  $('patchResult').style.display='none';
+  $('patchResult').innerHTML='';
+  $('allowPartialToggle').checked=false;
+  renderPatchModal();
+  $('patchModal').classList.add('active');
+}
+
+function closePatchModal(){
+  $('patchModal').classList.remove('active');
+}
+
+function renderPatchModal(){
+  const allowPartial=$('allowPartialToggle').checked;
+  const list=$('patchList');
+  list.innerHTML='';
+
+  const selected=patchState.patches.filter(p=>p.selected);
+  const blocked=selected.filter(p=>p.action!=='delete' && !p.isFull);
+  const risky=selected.filter(p=>p.warnings.length>0);
+
+  $('patchSummary').textContent = `${selected.length}/${patchState.patches.length} selected • ${blocked.length?blocked.length+' needs review':''}`;
+
+  for(let i=0;i<patchState.patches.length;i++){
+    const p=patchState.patches[i];
+    const typeBadge=p.action==='delete' ? '<span class="badge deleted">deleted</span>' : (p.changeType==='added'?'<span class="badge added">added</span>':(p.changeType==='modified'?'<span class="badge modified">modified</span>':'<span class="badge">unknown</span>'));
+    const riskBadge=p.warnings.length?'<span class="badge risk">warnings</span>':'';
+    const fullBadge=p.action==='delete' ? '<span class="badge deleted">delete</span>' : (p.isFull?'<span class="badge">full file</span>':'<span class="badge risk">unclear</span>');
+    const guessedBadge=p.explicitPath?'':'<span class="badge risk">path guessed</span>';
+    const warnText=p.warnings.length?p.warnings.join(' • '):'';
+
+    const row=document.createElement('div');
+    row.className='patch-item';
+    row.innerHTML=`
+      <input type="checkbox" ${p.selected?'checked':''} data-idx="${i}" class="patch-select">
+      <div class="meta">
+        <div class="path">${escapeHtml(p.filePath||'(choose path)')}</div>
+        <div class="sub">
+          ${typeBadge}
+          ${fullBadge}
+          ${guessedBadge}
+          ${riskBadge}
+          <span class="badge">${bytesToHuman(p.bytes)}</span>
+          <button type="button" class="mini-btn edit-path" data-idx="${i}">Edit path</button>
+          <button type="button" class="mini-btn toggle-delete" data-idx="${i}">${p.action==='delete'?'Undo delete':'Delete'}</button>
+        </div>
+        ${warnText?`<div class="sub" style="color:var(--yellow)">${escapeHtml(warnText)}</div>`:''}
+      </div>
+    `;
+    list.appendChild(row);
+  }
+
+  // Bind events
+  list.querySelectorAll('.patch-select').forEach(cb=>{
+    cb.onchange=(e)=>{
+      const idx=Number(e.target.getAttribute('data-idx'));
+      patchState.patches[idx].selected=e.target.checked;
+      renderPatchModal();
+    };
+  });
+  list.querySelectorAll('.edit-path').forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.preventDefault();e.stopPropagation();
+      const idx=Number(btn.getAttribute('data-idx'));
+      const current=patchState.patches[idx].filePath||'';
+      const next=prompt('File path to save:', current);
+      if(next===null)return;
+      patchState.patches[idx].filePath=(next||'').trim();
+      patchState.patches[idx].changeType=inferChangeType(patchState.patches[idx].filePath);
+      renderPatchModal();
+    };
+  });
+  list.querySelectorAll('.toggle-delete').forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.preventDefault();e.stopPropagation();
+      const idx=Number(btn.getAttribute('data-idx'));
+      const p=patchState.patches[idx];
+      p.action = (p.action==='delete') ? 'upsert' : 'delete';
+      // Always warn on deletes
+      if(p.action==='delete' && !p.warnings.includes('Delete file')) p.warnings.push('Delete file');
+      renderPatchModal();
+    };
+  });
+
+  // Global warnings + button state
+  const selectedNow=patchState.patches.filter(p=>p.selected);
+  const blockedNow=selectedNow.filter(p=>p.action!=='delete' && !p.isFull);
+  const missingPath=selectedNow.filter(p=>!p.filePath);
+
+  const warnings=[];
+  const deletes=selectedNow.filter(p=>p.action==='delete');
+  if(deletes.length)warnings.push(`⚠️ Deleting ${deletes.length} file(s). Double-check paths before proceeding.`);
+  if(missingPath.length)warnings.push(`Missing file path for ${missingPath.length} item(s). Click "Edit path".`);
+  if(blockedNow.length && !allowPartial)warnings.push(`Refusing to apply ${blockedNow.length} item(s) because they don't look like full files. Toggle "Allow partial edits" or unselect them.`);
+  $('patchWarnings').textContent = warnings.join('\n');
+
+  $('createPrBtn').disabled = (selectedNow.length===0) || (missingPath.length>0) || (blockedNow.length>0 && !allowPartial);
+}
+
+
+async function createDraftPr(){
   const repo=$('projectSelect').value;
   if(!repo){showToast('Select a project first','error');return}
-  const codeEl=document.getElementById(codeId);if(!codeEl){showToast('Code not found','error');return}
-  const code=codeEl.textContent;
-  const filePath=prompt('File path to save:',suggestedPath);if(!filePath)return;
-  const btn=codeEl.closest('.msg-content').querySelector(`button[onclick*="${codeId}"].apply-btn`);
-  if(btn){btn.disabled=true;btn.textContent='...';}
+  const allowPartial=$('allowPartialToggle').checked;
+  const selected=patchState.patches.filter(p=>p.selected);
+
+  if(!selected.length){showToast('Select at least one file','error');return}
+
+  const missingPath=selected.filter(p=>!p.filePath);
+  if(missingPath.length){showToast('Missing file path. Click "Edit path".','error');return}
+
+  const blocked=selected.filter(p=>p.action!=='delete' && !p.isFull);
+  if(blocked.length && !allowPartial){
+    showToast('Refusing to apply partial/unclear code blocks. Toggle "Allow partial edits" to override.','error');
+    return;
+  }
+
+  const patches=selected.map(p=>{const obj={ filePath:p.filePath, action:p.action }; if(p.action!=='delete') obj.content=p.content; return obj;});
+
+  $('createPrBtn').disabled=true;
+  $('createPrBtn').textContent='Creating...';
+
   try{
-    const res=await fetch('/api/apply-change',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({repoFullName:repo,filePath,newContent:code,commitMessage:`Update ${filePath} via AI Code Helper`})});
-    const data=await res.json();if(data.error)throw new Error(data.error);
-    if(btn){btn.textContent='✓ Done';btn.classList.add('applied')}
-    showToast(`Committed to ${repo}!`);
-  }catch(e){if(btn){btn.disabled=false;btn.textContent='Apply'}showToast('Failed: '+e.message,'error')}
-};
+    const res=await fetch('/api/apply-pr',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        repoFullName:repo,
+        conversationId:state.conversationId||'new',
+        patches,
+        prTitle:`AI Apply (${patches.length} file${patches.length===1?'':'s'})`,
+        prBody:`Draft PR created by AI Code Helper.\n\nConversation: ${state.conversationId||'new'}`,
+        commitMessage:`AI Apply: ${patches.length} file${patches.length===1?'':'s'}`
+      })
+    });
+    const data=await res.json();
+    if(data.error)throw new Error(data.error);
+
+    const url=data.prUrl;
+    $('patchResult').style.display='block';
+    $('patchResult').innerHTML=`✅ Draft PR created: <a href="${url}" target="_blank" rel="noopener">Open Pull Request</a>`;
+    showToast('Draft PR created');
+
+    // Mark apply buttons for included code blocks
+    if(patchState.messageEl){
+      selected.forEach(p=>{
+        const btn=patchState.messageEl.querySelector(`button.apply-btn[data-codeid="${p.codeId}"]`);
+        if(btn){btn.textContent='PR ✓';btn.classList.add('applied');}
+      });
+    }
+  }catch(e){
+    showToast('Failed: '+e.message,'error');
+  }finally{
+    $('createPrBtn').disabled=false;
+    $('createPrBtn').textContent='Create Draft PR';
+  }
+}
+
+// Patch modal events
+$('closePatchModal').onclick=()=>closePatchModal();
+$('cancelPatch').onclick=()=>closePatchModal();
+$('allowPartialToggle').onchange=()=>renderPatchModal();
+$('createPrBtn').onclick=()=>createDraftPr();
+$('patchModal').onclick=e=>{if(e.target===$('patchModal'))closePatchModal()};
 
 $('modelToggle').querySelectorAll('button').forEach(b=>{b.onclick=()=>{$('modelToggle').querySelectorAll('button').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.mode=b.dataset.mode;updateRoutePreview()}});
 
