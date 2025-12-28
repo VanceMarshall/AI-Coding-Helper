@@ -131,29 +131,6 @@ details.code-block[open] .code-caret{transform:rotate(90deg)}
     .modal-footer button{padding:10px 20px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer}
     .btn-secondary{background:var(--bg3);border:1px solid var(--border);color:var(--text)}
     .btn-primary{background:var(--accent);border:none;color:var(--bg)}
-
-    /* Patch Preview (Apply-as-PR v2) */
-    .patch-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
-    .patch-controls label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)}
-    .patch-summary{font-size:12px;color:var(--text3)}
-    .patch-list{display:flex;flex-direction:column;gap:8px}
-    .patch-item{border:1px solid var(--border);background:var(--bg3);border-radius:8px;padding:10px;display:flex;gap:10px;align-items:flex-start}
-    .patch-item input[type=checkbox]{margin-top:3px}
-    .patch-item .meta{flex:1;min-width:0}
-    .patch-item .path{font-family:var(--mono);font-size:13px;color:var(--text);word-break:break-word}
-    .patch-item .sub{font-size:11px;color:var(--text3);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .badge{font-size:10px;padding:2px 6px;border-radius:6px;background:var(--bg4);color:var(--text2);border:1px solid var(--border)}
-    .badge.added{border-color:rgba(63,185,80,.5);color:var(--green)}
-    .badge.modified{border-color:rgba(88,166,255,.5);color:var(--accent)}
-    .badge.deleted{border-color:rgba(248,81,73,.5);color:var(--red)}
-    .badge.risk{border-color:rgba(210,153,34,.6);color:var(--yellow)}
-    .mini-btn{background:none;border:1px solid var(--border);color:var(--text2);border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer}
-    .mini-btn:hover{background:var(--bg4);color:var(--text)}
-    .patch-warnings{margin-top:10px;color:var(--yellow);font-size:12px;white-space:pre-wrap}
-    .patch-result{margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);font-size:13px}
-    .patch-result a{color:var(--accent);text-decoration:none}
-    .patch-result a:hover{text-decoration:underline}
-
     .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:12px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;display:none;z-index:2000;max-width:90%;text-align:center}
     .toast.success{border-left:3px solid var(--green)}.toast.error{border-left:3px solid var(--red)}
     .streaming-dot{width:6px;height:6px;background:var(--accent);border-radius:50%;animation:pulse 1.5s infinite;display:inline-block}
@@ -259,83 +236,36 @@ details.code-block[open] .code-caret{transform:rotate(90deg)}
   </div>
 
   <div class="modal" id="patchModal">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width:900px">
       <div class="modal-header">
         <h3>🧩 Patch Preview</h3>
         <button class="modal-close" id="closePatchModal">×</button>
       </div>
       <div class="modal-body">
+        <div class="patch-grid" id="patchList"></div>
+
         <div class="patch-controls">
-          <label><input type="checkbox" id="allowPartialToggle"> Allow partial edits</label>
-          <div class="patch-summary" id="patchSummary"></div>
+          <label><input type="checkbox" id="allowPartialEdits"> Allow partial edits (unsafe)</label>
         </div>
-        <div class="patch-list" id="patchList"></div>
-        <div class="patch-warnings" id="patchWarnings"></div>
-        <div class="patch-result" id="patchResult" style="display:none"></div>
+        <div class="patch-small">
+          Safety rules: by default, each selected code block must represent a full file. If a block looks like a diff or partial snippet, we will refuse unless you enable "Allow partial edits".
+          We also refuse suspicious file paths (absolute paths, traversal, .git/).
+        </div>
+
+        <div style="margin-top:14px">
+          <input type="text" id="prTitle" class="file-search" placeholder="PR title (optional)">
+          <textarea id="prBody" class="file-search" placeholder="PR description (optional)" style="height:90px;resize:vertical"></textarea>
+        </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer patch-actions">
         <button class="btn-secondary" id="cancelPatch">Cancel</button>
         <button class="btn-primary" id="createPrBtn">Create Draft PR</button>
       </div>
     </div>
   </div>
-
 <script>
+
 marked.setOptions({highlight:(c,l)=>l&&hljs.getLanguage(l)?hljs.highlight(c,{language:l}).value:hljs.highlightAuto(c).value,breaks:true,gfm:true});
-
-
-function renderMarkdown(md){
-  const rendered = marked.parse(md||'');
-  const container = document.createElement('div');
-  container.innerHTML = rendered;
-
-  // Wrap every <pre><code> in a collapsible block with Copy + Create PR actions.
-  // This is DOM-based (not regex-based) so it survives markup/class order differences.
-  const codeNodes = Array.from(container.querySelectorAll('pre > code'));
-  for (const codeEl of codeNodes){
-    const raw = codeEl.textContent || '';
-    const cls = codeEl.getAttribute('class') || '';
-    const langMatch = cls.match(/language-([a-z0-9_+\-]+)/i);
-    const lang = (langMatch ? langMatch[1] : 'text').toLowerCase();
-
-    const explicitPath = extractFilePathFromCode(raw);
-    const fp = explicitPath || detectFilePath(raw, lang);
-    const label = explicitPath ? fp : (fp + ' (?)');
-    const uid = 'code-' + Math.random().toString(36).slice(2,9);
-
-    const details = document.createElement('details');
-    details.className = 'code-block';
-    details.open = true;
-
-    // Preserve innerHTML (may contain syntax highlighting spans).
-    const inner = codeEl.innerHTML;
-
-    details.innerHTML = `<summary class="code-header">
-        <div class="code-left">
-          <span class="code-caret">▶</span>
-          <span class="code-lang">${escapeHtml(label)}</span>
-          <span class="code-filename">${escapeHtml(lang)}</span>
-        </div>
-        <div class="code-actions">
-          <button type="button" class="copy-btn" onclick="copyCode('${uid}', event)">Copy</button>
-          <button type="button" class="apply-btn" data-codeid="${uid}" onclick="openPatchPreviewFromCode('${uid}', event)">Create PR</button>
-        </div>
-      </summary>
-      <div class="code-body">
-        <pre><code id="${uid}" class="${escapeHtml(cls || ('language-'+lang))}" data-suggested-path="${escapeHtml(fp)}">${inner}</code></pre>
-      </div>`;
-
-    const newCode = details.querySelector('code');
-    // Ensure hljs class is present for styles.
-    if (newCode && !/hljs/.test(newCode.className)) newCode.className = (newCode.className + ' hljs').trim();
-
-    const pre = codeEl.parentElement;
-    if (pre) pre.replaceWith(details);
-  }
-
-  return container.innerHTML;
-}
-
 const state={conversationId:null,conversations:[],loadedFiles:[],repoFiles:[],selectedFiles:new Set(),config:null,mode:'auto',chatMode:'building',totalCost:0,streaming:false};
 const $=id=>document.getElementById(id);
 function showToast(m,t='success'){const e=$('toast');e.textContent=m;e.className=`toast ${t}`;e.style.display='block';setTimeout(()=>e.style.display='none',4000)}
@@ -397,268 +327,260 @@ function appendMessage(role,content,model='',animate=true){
   $('messagesInner').appendChild(msg);return msg;
 }
 
-
-function guessFilePathByLang(lang){
-  const p={'javascript':'script.js','js':'script.js','typescript':'script.ts','ts':'script.ts','jsx':'component.jsx','tsx':'component.tsx','python':'script.py','py':'script.py','html':'index.html','css':'styles.css','json':'data.json','md':'README.md'};
-  return p[lang]||'file.txt';
-}
-
-function extractFilePathFromCode(code){
-  const lines=code.split('\n').slice(0,30);
-  const re1=/^\s*(?:\/\/|#|;|<!--|\/\*|\*)\s*(?:filepath|file path|file|path)\s*:\s*([^\s]+)\s*(?:-->|\*\/)?\s*$/i;
-  const re2=/^\s*(?:\/\/|#|;|<!--|\/\*|\*)\s*([a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)+\.[a-zA-Z0-9]+)\s*(?:-->|\*\/)?\s*$/;
-  for(const line of lines){
-    let m=line.match(re1);if(m)return m[1];
-    m=line.match(re2);if(m)return m[1];
-  }
-  return null;
-}
-
-function looksLikeDiff(code){
-  return /(^|\n)(@@|\+\+\+ |--- )/m.test(code);
-}
-
-function looksPartial(code){
-  const markers=[
-    /(^|\n)\s*\.{3}\s*$/m,
-    /\(truncated\)/i,
-    /\b(existing code|rest of the file|your code here|insert here|fill in|snip)\b/i,
-    /\bTODO:\s*(?:fill|replace|implement)\b/i
+function extractFilePathMeta(code,lang){
+  const lines=String(code||'').split('\n').slice(0,8);
+  const patterns=[
+    /^\s*(?:\/\/|#|<!--|;|--|\*|\/\*+)\s*(?:file|filepath|path)\s*:\s*([^\s]+)\s*/i,
+    /^\s*<!--\s*(?:file|filepath|path)\s*:\s*([^\s]+)\s*-->\s*$/i
   ];
-  return markers.some(r=>r.test(code));
-}
-
-function detectFilePath(code,lang){
-  return extractFilePathFromCode(code)||guessFilePathByLang(lang);
-}
-
-function bytesToHuman(n){
-  if(n<1024)return `${n} B`;
-  if(n<1024*1024)return `${(n/1024).toFixed(1)} KB`;
-  return `${(n/1024/1024).toFixed(2)} MB`;
-}
-
-function inferChangeType(filePath){
-  if(!filePath)return 'unknown';
-  if(Array.isArray(state.repoFiles)&&state.repoFiles.includes(filePath))return 'modified';
-  return 'added';
-}
-
-function assessCodeBlock(code, explicitPath){
-  const warnings=[];
-  const deletes=selectedNow.filter(p=>p.action==='delete');
-  if(deletes.length)warnings.push(`⚠️ Deleting ${deletes.length} file(s). Double-check paths before proceeding.`);
-  const isDiff=looksLikeDiff(code);
-  const isPartial=looksPartial(code);
-  if(!explicitPath)warnings.push('Missing filepath marker (example: // filepath: src/app.js)');
-  if(isDiff)warnings.push('Looks like a diff/patch, not a full file');
-  if(isPartial)warnings.push('Contains placeholders/ellipsis; may be partial');
-  const isFull=!isDiff && !isPartial;
-  return { isFull, warnings };
-}
-
-function collectPatchesFromMessage(messageEl){
-  const blocks=[...messageEl.querySelectorAll('details.code-block')];
-  const patches=[];
-  for(const b of blocks){
-    const codeEl=b.querySelector('code[id]');
-    if(!codeEl)continue;
-    const code=codeEl.textContent||'';
-    const lang=(codeEl.className.match(/language-([a-z0-9]+)/i)||[])[1]||'';
-    const explicitPath=extractFilePathFromCode(code);
-    const suggested=codeEl.getAttribute('data-suggested-path')||'';
-    const guessed=suggested||guessFilePathByLang(lang);
-    const filePath=(explicitPath||guessed||'').trim();
-    const bytes=(new TextEncoder()).encode(code).length;
-    const {isFull,warnings}=assessCodeBlock(code, explicitPath);
-    const changeType=inferChangeType(filePath);
-
-    const itemWarnings=[...warnings];
-    if(!filePath)itemWarnings.push('Missing file path');
-    if(bytes>200_000)itemWarnings.push(`Large file (${bytesToHuman(bytes)})`);
-    patches.push({ codeId:codeEl.id, filePath, explicitPath:!!explicitPath, action:'upsert', content:code, bytes, isFull, warnings:itemWarnings, selected:true, changeType });
+  for(const line of lines){
+    for(const p of patterns){
+      const m=line.match(p);
+      if(m&&m[1]) return {path:m[1].trim(),explicit:true};
+    }
   }
-
-  // Duplicate path warning
-  const seen={};
-  patches.forEach((p)=>{
-    if(!p.filePath)return;
-    if(seen[p.filePath]){p.warnings.push('Duplicate file path in selection');seen[p.filePath].warnings.push('Duplicate file path in selection');}
-    else seen[p.filePath]=p;
-  });
-
-  return patches;
+  const map={'javascript':'script.js','js':'script.js','typescript':'script.ts','ts':'script.ts','jsx':'component.jsx','tsx':'component.tsx','python':'script.py','py':'script.py','html':'index.html','css':'styles.css','json':'data.json','md':'README.md','yaml':'config.yml','yml':'config.yml'};
+  return {path:map[String(lang||'').toLowerCase()]||'file.txt',explicit:false};
 }
 
-// Patch Preview modal state
-const patchState={ patches:[], messageEl:null };
-
-function openPatchModal(patches, messageEl){
-  patchState.patches=patches;
-  patchState.messageEl=messageEl;
-  $('patchResult').style.display='none';
-  $('patchResult').innerHTML='';
-  $('allowPartialToggle').checked=false;
-  renderPatchModal();
-  $('patchModal').classList.add('active');
+function isProbablyPartialSnippet(code){
+  const c=String(code||'');
+  if(/\ndiff --git\b/.test(c)||/^diff --git\b/m.test(c))return true;
+  if(/^\s*@@\s+[-+]\d/m.test(c))return true;
+  if(/^\s*\+\+\+\s|\n\+\+\+\s/.test(c)||/^\s*---\s|\n---\s/.test(c))return true;
+  if(/^\s*\.\.\.\s*$/m.test(c))return true;
+  if(/\b(insert|replace)\b.*\b(here|below)\b/i.test(c))return true;
+  return false;
 }
 
-function closePatchModal(){
-  $('patchModal').classList.remove('active');
+function normalizeClientPath(p){
+  if(typeof p!=='string')return {ok:false,error:'Path must be a string'};
+  let s=p.replace(/\\/g,'/').trim();
+  if(s.startsWith('./'))s=s.slice(2);
+  if(!s)return {ok:false,error:'Missing file path'};
+  if(s.startsWith('/'))return {ok:false,error:'Path must be relative (no leading /)'};
+  const parts=s.split('/');
+  for(const part of parts){
+    if(!part)return {ok:false,error:'Path contains empty segment'};
+    if(part==='.'||part==='..')return {ok:false,error:'Path contains invalid segment'};
+  }
+  if(s.includes('/.git/')||s.startsWith('.git/'))return {ok:false,error:'Refusing to write into .git/'};
+  return {ok:true,path:s};
 }
 
-function renderPatchModal(){
-  const allowPartial=$('allowPartialToggle').checked;
-  const list=$('patchList');
-  list.innerHTML='';
+function findLangFromCodeEl(codeEl){
+  const cls=Array.from(codeEl.classList||[]);
+  const langClass=cls.find(x=>x.startsWith('language-'));
+  return langClass?langClass.replace('language-',''):'text';
+}
 
-  const selected=patchState.patches.filter(p=>p.selected);
-  const blocked=selected.filter(p=>p.action!=='delete' && !p.isFull);
-  const risky=selected.filter(p=>p.warnings.length>0);
+function renderMarkdown(c){
+  if(!c)return'';
+  const raw=marked.parse(c);
+  const temp=document.createElement('div');
+  temp.innerHTML=raw;
 
-  $('patchSummary').textContent = `${selected.length}/${patchState.patches.length} selected • ${blocked.length?blocked.length+' needs review':''}`;
+  const codeEls=Array.from(temp.querySelectorAll('pre>code'));
+  for(const codeEl of codeEls){
+    const lang=findLangFromCodeEl(codeEl);
+    const codeText=codeEl.textContent||'';
+    const meta=extractFilePathMeta(codeText,lang);
+    const uid='code-'+Math.random().toString(36).slice(2,11);
+    codeEl.id=uid;
+    codeEl.dataset.codeId=uid;
 
-  for(let i=0;i<patchState.patches.length;i++){
-    const p=patchState.patches[i];
-    const typeBadge=p.action==='delete' ? '<span class="badge deleted">deleted</span>' : (p.changeType==='added'?'<span class="badge added">added</span>':(p.changeType==='modified'?'<span class="badge modified">modified</span>':'<span class="badge">unknown</span>'));
-    const riskBadge=p.warnings.length?'<span class="badge risk">warnings</span>':'';
-    const fullBadge=p.action==='delete' ? '<span class="badge deleted">delete</span>' : (p.isFull?'<span class="badge">full file</span>':'<span class="badge risk">unclear</span>');
-    const guessedBadge=p.explicitPath?'':'<span class="badge risk">path guessed</span>';
-    const warnText=p.warnings.length?p.warnings.join(' • '):'';
+    const pre=codeEl.parentElement;
+    const details=document.createElement('details');
+    details.className='code-block';
+    const summary=document.createElement('summary');
+    summary.className='code-header';
+    const label=meta.explicit?meta.path:`${meta.path} (guessed)`;
 
-    const row=document.createElement('div');
-    row.className='patch-item';
-    row.innerHTML=`
-      <input type="checkbox" ${p.selected?'checked':''} data-idx="${i}" class="patch-select">
-      <div class="meta">
-        <div class="path">${escapeHtml(p.filePath||'(choose path)')}</div>
-        <div class="sub">
-          ${typeBadge}
-          ${fullBadge}
-          ${guessedBadge}
-          ${riskBadge}
-          <span class="badge">${bytesToHuman(p.bytes)}</span>
-          <button type="button" class="mini-btn edit-path" data-idx="${i}">Edit path</button>
-          <button type="button" class="mini-btn toggle-delete" data-idx="${i}">${p.action==='delete'?'Undo delete':'Delete'}</button>
-        </div>
-        ${warnText?`<div class="sub" style="color:var(--yellow)">${escapeHtml(warnText)}</div>`:''}
+    summary.innerHTML=`
+      <div class="code-left">
+        <span class="code-caret">▶</span>
+        <span class="code-lang">${escapeHtml(label)}</span>
+      </div>
+      <div class="code-actions">
+        <button type="button" data-action="copy" data-code-id="${uid}">Copy</button>
+        <button type="button" class="apply-btn" data-action="patch" data-code-id="${uid}">Create PR</button>
       </div>
     `;
-    list.appendChild(row);
+    const body=document.createElement('div');
+    body.className='code-body';
+    body.appendChild(pre);
+    details.appendChild(summary);
+    details.appendChild(body);
+    pre.replaceWith(details);
   }
 
-  // Bind events
-  list.querySelectorAll('.patch-select').forEach(cb=>{
-    cb.onchange=(e)=>{
-      const idx=Number(e.target.getAttribute('data-idx'));
-      patchState.patches[idx].selected=e.target.checked;
-      renderPatchModal();
-    };
-  });
-  list.querySelectorAll('.edit-path').forEach(btn=>{
-    btn.onclick=(e)=>{
-      e.preventDefault();e.stopPropagation();
-      const idx=Number(btn.getAttribute('data-idx'));
-      const current=patchState.patches[idx].filePath||'';
-      const next=prompt('File path to save:', current);
-      if(next===null)return;
-      patchState.patches[idx].filePath=(next||'').trim();
-      patchState.patches[idx].changeType=inferChangeType(patchState.patches[idx].filePath);
-      renderPatchModal();
-    };
-  });
-  list.querySelectorAll('.toggle-delete').forEach(btn=>{
-    btn.onclick=(e)=>{
-      e.preventDefault();e.stopPropagation();
-      const idx=Number(btn.getAttribute('data-idx'));
-      const p=patchState.patches[idx];
-      p.action = (p.action==='delete') ? 'upsert' : 'delete';
-      // Always warn on deletes
-      if(p.action==='delete' && !p.warnings.includes('Delete file')) p.warnings.push('Delete file');
-      renderPatchModal();
-    };
-  });
-
-  // Global warnings + button state
-  const selectedNow=patchState.patches.filter(p=>p.selected);
-  const blockedNow=selectedNow.filter(p=>p.action!=='delete' && !p.isFull);
-  const missingPath=selectedNow.filter(p=>!p.filePath);
-
-  const warnings=[];
-  const deletes=selectedNow.filter(p=>p.action==='delete');
-  if(deletes.length)warnings.push(`⚠️ Deleting ${deletes.length} file(s). Double-check paths before proceeding.`);
-  if(missingPath.length)warnings.push(`Missing file path for ${missingPath.length} item(s). Click "Edit path".`);
-  if(blockedNow.length && !allowPartial)warnings.push(`Refusing to apply ${blockedNow.length} item(s) because they don't look like full files. Toggle "Allow partial edits" or unselect them.`);
-  $('patchWarnings').textContent = warnings.join('\n');
-
-  $('createPrBtn').disabled = (selectedNow.length===0) || (missingPath.length>0) || (blockedNow.length>0 && !allowPartial);
+  return temp.innerHTML;
 }
 
+// Patch Preview / Create PR flow (event delegation, no inline handlers)
+state.patchContext=null;
 
-async function createDraftPr(){
+function openPatchModal(){ $('patchModal').classList.add('active'); }
+function closePatchModal(){ $('patchModal').classList.remove('active'); state.patchContext=null; $('patchList').innerHTML=''; $('prTitle').value=''; $('prBody').value=''; $('allowPartialEdits').checked=false; }
+
+$('closePatchModal').onclick=closePatchModal;
+$('cancelPatch').onclick=closePatchModal;
+$('patchModal').addEventListener('click',(e)=>{ if(e.target===$('patchModal')) closePatchModal(); });
+
+function collectPatchesFromMessage(msgEl){
+  const details=Array.from(msgEl.querySelectorAll('details.code-block'));
+  return details.map((d,idx)=>{
+    const codeEl=d.querySelector('code');
+    const codeText=codeEl?codeEl.textContent:'';
+    const lang=codeEl?findLangFromCodeEl(codeEl):'text';
+    const meta=extractFilePathMeta(codeText,lang);
+    return { idx, codeId: codeEl?.id, lang, codeText, suggestedPath: meta.path, explicitPath: meta.explicit, isPartial: isProbablyPartialSnippet(codeText) };
+  });
+}
+
+function computeFileStatus(path){
+  if(!state.repoFiles||!state.repoFiles.length) return 'unknown';
+  return state.repoFiles.includes(path)?'modified':'added';
+}
+
+function renderPatchList(items){
+  const repo=$('projectSelect').value;
+  const rows=items.map((it,i)=>{
+    const status=it.path?computeFileStatus(it.path):'unknown';
+    const badgeCls=status==='added'?'added':status==='modified'?'modified':'unknown';
+    const warns=[];
+    if(!it.explicitPath)warns.push('Path guessed');
+    if(it.isPartial)warns.push('Looks partial/diff');
+    if(it.action==='delete')warns.push('Delete');
+    if((it.content||'').length>200000)warns.push('Large file');
+    const warnHtml=warns.length?`<div class="patch-warn">⚠ ${warns.join(' · ')}</div>`:'';
+    return `
+      <div class="patch-row" data-row="${i}">
+        <input type="checkbox" data-field="enabled" ${it.enabled?'checked':''}>
+        <select data-field="action">
+          <option value="upsert" ${it.action==='upsert'?'selected':''}>Upsert</option>
+          <option value="delete" ${it.action==='delete'?'selected':''}>Delete</option>
+        </select>
+        <div>
+          <input type="text" data-field="path" value="${escapeHtml(it.path||'')}" placeholder="path/to/file.ext">
+          ${warnHtml}
+        </div>
+        <span class="patch-badge ${badgeCls}">${status.toUpperCase()}</span>
+      </div>
+    `;
+  }).join('');
+  $('patchList').innerHTML=rows || `<div style="color:var(--text2);font-size:13px">No code blocks found to apply.</div>`;
+}
+
+async function openPatchPreviewFromButton(btn){
   const repo=$('projectSelect').value;
   if(!repo){showToast('Select a project first','error');return}
-  const allowPartial=$('allowPartialToggle').checked;
-  const selected=patchState.patches.filter(p=>p.selected);
+  if(!state.repoFiles||!state.repoFiles.length) await loadRepoFiles();
+
+  const msgEl=btn.closest('.message.assistant');
+  if(!msgEl){showToast('Could not locate message','error');return}
+  const raw=collectPatchesFromMessage(msgEl);
+  if(!raw.length){showToast('No code blocks found','error');return}
+
+  const items=raw.map(r=>{
+    const norm=normalizeClientPath(r.suggestedPath);
+    const path=norm.ok?norm.path:'';
+    return {
+      enabled:true,
+      action:'upsert',
+      path,
+      content:r.codeText,
+      explicitPath:r.explicitPath,
+      isPartial:r.isPartial,
+      codeId:r.codeId
+    };
+  });
+
+  state.patchContext={repo,items,conversationId:state.conversationId||null};
+  $('prTitle').value=`AI changes (${state.conversationId||'adhoc'})`;
+  $('prBody').value=`Draft PR created by AI Code Helper.\n\nConversation: ${state.conversationId||'adhoc'}\n`;
+  renderPatchList(items);
+  openPatchModal();
+}
+
+function syncPatchItemsFromUI(){
+  const ctx=state.patchContext;if(!ctx)return;
+  const rows=Array.from($('patchList').querySelectorAll('.patch-row'));
+  rows.forEach((row)=>{
+    const i=parseInt(row.dataset.row,10);
+    const enabled=row.querySelector('[data-field="enabled"]').checked;
+    const action=row.querySelector('[data-field="action"]').value;
+    const path=row.querySelector('[data-field="path"]').value;
+    ctx.items[i].enabled=enabled;
+    ctx.items[i].action=action;
+    ctx.items[i].path=path;
+  });
+}
+
+async function createDraftPRFromPreview(){
+  const ctx=state.patchContext;
+  if(!ctx){showToast('No patch in progress','error');return}
+  syncPatchItemsFromUI();
+
+  const allowPartial=$('allowPartialEdits').checked;
+  const selected=ctx.items.filter(x=>x.enabled);
 
   if(!selected.length){showToast('Select at least one file','error');return}
 
-  const missingPath=selected.filter(p=>!p.filePath);
-  if(missingPath.length){showToast('Missing file path. Click "Edit path".','error');return}
-
-  const blocked=selected.filter(p=>p.action!=='delete' && !p.isFull);
-  if(blocked.length && !allowPartial){
-    showToast('Refusing to apply partial/unclear code blocks. Toggle "Allow partial edits" to override.','error');
-    return;
+  for(const it of selected){
+    const norm=normalizeClientPath(it.path||'');
+    if(!norm.ok){showToast(`Invalid path: ${norm.error}`,'error');return}
+    it.path=norm.path;
+    if(!allowPartial && it.isPartial){
+      showToast(`Refusing to apply partial/diff snippet: ${it.path}`,'error');return
+    }
+    if(it.action==='upsert' && !allowPartial){
+      // Extra guardrail: refuse obviously empty "files"
+      if(String(it.content||'').trim().length===0){
+        showToast(`Refusing empty file content: ${it.path}`,'error');return
+      }
+    }
   }
 
-  const patches=selected.map(p=>{const obj={ filePath:p.filePath, action:p.action }; if(p.action!=='delete') obj.content=p.content; return obj;});
-
-  $('createPrBtn').disabled=true;
-  $('createPrBtn').textContent='Creating...';
-
+  $('createPrBtn').disabled=true;$('createPrBtn').textContent='...';
   try{
-    const res=await fetch('/api/apply-pr',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        repoFullName:repo,
-        conversationId:state.conversationId||'new',
-        patches,
-        prTitle:`AI Apply (${patches.length} file${patches.length===1?'':'s'})`,
-        prBody:`Draft PR created by AI Code Helper.\n\nConversation: ${state.conversationId||'new'}`,
-        commitMessage:`AI Apply: ${patches.length} file${patches.length===1?'':'s'}`
-      })
-    });
+    const payload={
+      repoFullName:ctx.repo,
+      conversationId:ctx.conversationId,
+      title:$('prTitle').value||undefined,
+      body:$('prBody').value||undefined,
+      changes:selected.map(it=>({filePath:it.path,action:it.action,content:it.content,commitMessage:`${it.action==='delete'?'Delete':'Update'} ${it.path} via AI Code Helper`})),
+    };
+    const res=await fetch('/api/apply-pr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const data=await res.json();
-    if(data.error)throw new Error(data.error);
-
-    const url=data.prUrl;
-    $('patchResult').style.display='block';
-    $('patchResult').innerHTML=`✅ Draft PR created: <a href="${url}" target="_blank" rel="noopener">Open Pull Request</a>`;
-    showToast('Draft PR created');
-
-    // Mark apply buttons for included code blocks
-    if(patchState.messageEl){
-      selected.forEach(p=>{
-        const btn=patchState.messageEl.querySelector(`button.apply-btn[data-codeid="${p.codeId}"]`);
-        if(btn){btn.textContent='PR ✓';btn.classList.add('applied');}
-      });
-    }
+    if(!res.ok||data.error) throw new Error(data.error||`HTTP ${res.status}`);
+    closePatchModal();
+    showToast('Draft PR created!');
+    if(data.prUrl) window.open(data.prUrl,'_blank');
   }catch(e){
     showToast('Failed: '+e.message,'error');
   }finally{
-    $('createPrBtn').disabled=false;
-    $('createPrBtn').textContent='Create Draft PR';
+    $('createPrBtn').disabled=false;$('createPrBtn').textContent='Create Draft PR';
   }
 }
 
-// Patch modal events
-$('closePatchModal').onclick=()=>closePatchModal();
-$('cancelPatch').onclick=()=>closePatchModal();
-$('allowPartialToggle').onchange=()=>renderPatchModal();
-$('createPrBtn').onclick=()=>createDraftPr();
-$('patchModal').onclick=e=>{if(e.target===$('patchModal'))closePatchModal()};
+$('createPrBtn').onclick=createDraftPRFromPreview;
+
+document.addEventListener('click',(e)=>{
+  const btn=e.target.closest('button[data-action]');
+  if(!btn)return;
+  const action=btn.dataset.action;
+  if(action==='copy'){
+    e.preventDefault();e.stopPropagation();
+    const id=btn.dataset.codeId;
+    const el=document.getElementById(id);
+    if(el){navigator.clipboard.writeText(el.textContent||'');showToast('Copied!')}
+  }
+  if(action==='patch'){
+    e.preventDefault();e.stopPropagation();
+    openPatchPreviewFromButton(btn);
+  }
+});
 
 $('modelToggle').querySelectorAll('button').forEach(b=>{b.onclick=()=>{$('modelToggle').querySelectorAll('button').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.mode=b.dataset.mode;updateRoutePreview()}});
 
