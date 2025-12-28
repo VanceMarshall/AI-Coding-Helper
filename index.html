@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <title>AI Code Helper</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <style>
+    :root{--bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--bg4:#30363d;--border:#30363d;--text:#e6edf3;--text2:#8b949e;--text3:#6e7681;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;--purple:#a371f7;--sans:'Plus Jakarta Sans',sans-serif;--mono:'JetBrains Mono',monospace}
+    *{box-sizing:border-box;margin:0;padding:0}html,body{height:100%;overflow:hidden}
+    body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+    .app{display:flex;height:100vh;height:100dvh}
+    .sidebar{width:280px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;z-index:100}
+    .sidebar-header{padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+    .sidebar-header h1{font-size:18px;display:flex;align-items:center;gap:8px}
+    .sidebar-header h1 span{background:linear-gradient(135deg,var(--accent),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .close-sidebar{display:none;background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;padding:4px}
+    .project-select{padding:12px 16px;border-bottom:1px solid var(--border)}
+    .project-select label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:6px}
+    .project-select select{width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:14px}
+    .sidebar-actions{padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+    .action-btn{padding:12px 16px;border:none;border-radius:8px;font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+    .action-btn.primary{background:var(--accent);color:var(--bg)}
+    .action-btn.secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border)}
+    .action-btn:hover{opacity:0.9}
+    .conversations{flex:1;overflow-y:auto;padding:8px}
+    .conv-item{padding:12px;border-radius:8px;cursor:pointer;margin-bottom:4px;display:flex;align-items:center;gap:8px;font-size:14px}
+    .conv-item:hover{background:var(--bg4)}.conv-item.active{background:var(--bg3)}
+    .conv-item .title{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .conv-item .type-badge{font-size:10px;padding:2px 6px;border-radius:4px;background:var(--bg4);color:var(--text3)}
+    .conv-item .type-badge.planning{background:rgba(210,153,34,0.2);color:var(--yellow)}
+    .sidebar-footer{padding:12px 16px;border-top:1px solid var(--border)}
+    .sidebar-footer a{color:var(--text2);text-decoration:none;font-size:13px;display:flex;align-items:center;gap:6px;padding:8px 0}
+    .sidebar-footer a:hover{color:var(--text)}
+    .main{flex:1;display:flex;flex-direction:column;min-width:0}
+    .chat-header{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:12px}
+    .menu-btn{display:none;background:none;border:none;color:var(--text);font-size:20px;cursor:pointer;padding:4px}
+    .chat-title{font-size:15px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .model-indicator{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;flex-shrink:0}
+    .model-indicator .dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
+    .messages{flex:1;overflow-y:auto;padding:16px}.messages-inner{max-width:800px;margin:0 auto}
+    .message{margin-bottom:20px;animation:fadeIn .3s}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1}}
+    .msg-header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+    .msg-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
+    .message.user .msg-avatar{background:var(--accent);color:var(--bg)}
+    .message.assistant .msg-avatar{background:linear-gradient(135deg,var(--purple),var(--accent));color:#fff}
+    .msg-author{font-weight:600}.msg-meta{font-size:11px;color:var(--text3)}
+    .msg-content{padding-left:38px}.msg-content p{margin-bottom:12px}.msg-content p:last-child{margin-bottom:0}
+    .msg-content pre{margin:12px 0;border-radius:8px;overflow:hidden}
+    .msg-content pre code{display:block;padding:12px;background:var(--bg3);overflow-x:auto;font-size:13px}
+    .msg-content code{font-family:var(--mono);background:var(--bg3);padding:2px 6px;border-radius:4px;font-size:13px}
+    .msg-content ul,.msg-content ol{margin:12px 0;padding-left:24px}.msg-content li{margin-bottom:6px}
+    .msg-content h2,.msg-content h3{margin:16px 0 8px;color:var(--text)}
+    .msg-content strong{color:var(--text)}
+    .msg-content hr{border:none;border-top:1px solid var(--border);margin:16px 0}
+    .code-header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg4);font-size:12px;color:var(--text2);flex-wrap:wrap;gap:8px}
+    .code-header .code-lang{font-weight:500}
+    .code-header .code-actions{display:flex;gap:6px}
+    .code-header button{background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;font-size:11px;padding:6px 10px;border-radius:4px;font-family:var(--sans)}
+    .code-header button:hover{background:var(--bg3);color:var(--text);border-color:var(--text3)}
+    .code-header button.apply-btn{border-color:var(--green);color:var(--green)}
+    .code-header button.apply-btn:hover{background:rgba(63,185,80,0.15)}
+    .code-header button.applied{border-color:var(--green);background:rgba(63,185,80,0.15);color:var(--green)}
+    .code-header button:disabled{opacity:0.5;cursor:not-allowed}
+/* Collapsible code blocks */
+details.code-block{margin:12px 0;border:1px solid var(--border);border-radius:8px;background:var(--bg2);overflow:hidden}
+details.code-block>summary{list-style:none}
+details.code-block>summary::-webkit-details-marker{display:none}
+details.code-block>summary::marker{content:''}
+.code-left{display:flex;align-items:center;gap:8px}
+.code-caret{display:inline-block;transition:transform .15s ease;color:var(--text3)}
+details.code-block[open] .code-caret{transform:rotate(90deg)}
+.code-body pre{margin:0;border-radius:0}
+.code-body pre code{border-radius:0}
+.code-block .code-header{border:none;border-bottom:1px solid var(--border);border-radius:0;cursor:pointer}
+.code-block .code-actions button{cursor:pointer}
+
+    .empty-state{text-align:center;padding:40px 20px;color:var(--text2)}
+    .empty-state h2{font-size:22px;color:var(--text);margin-bottom:8px}
+    .empty-state p{margin-bottom:20px;max-width:400px;margin-left:auto;margin-right:auto}
+    .empty-actions{display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:24px}
+    .empty-actions button{padding:14px 28px;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;width:100%;max-width:260px;justify-content:center}
+    .empty-actions .primary{background:var(--accent);color:var(--bg);border:none}
+    .empty-actions .secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border)}
+    .suggestions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:20px}
+    .suggestion{padding:10px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;font-size:14px;cursor:pointer;color:var(--text)}
+    .suggestion:hover{border-color:var(--accent);color:var(--accent)}
+    .input-area{padding:12px 16px;border-top:1px solid var(--border);background:var(--bg2)}
+    .input-inner{max-width:800px;margin:0 auto}
+    .mode-indicator{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px;color:var(--text2)}
+    .mode-indicator .mode-badge{padding:4px 10px;border-radius:12px;font-weight:500}
+    .mode-indicator .mode-badge.planning{background:rgba(210,153,34,0.2);color:var(--yellow)}
+    .mode-indicator .mode-badge.building{background:rgba(88,166,255,0.2);color:var(--accent)}
+    .model-toggle{display:flex;gap:4px;margin-bottom:10px;background:var(--bg3);padding:4px;border-radius:8px;width:fit-content}
+    .model-toggle button{padding:8px 14px;background:none;border:none;color:var(--text2);font-family:var(--sans);font-size:13px;font-weight:500;cursor:pointer;border-radius:6px}
+    .model-toggle button.active{background:var(--bg4);color:var(--text)}
+    .model-toggle button.active[data-mode=auto]{color:var(--yellow)}
+    .model-toggle button.active[data-mode=fast]{color:var(--green)}
+    .model-toggle button.active[data-mode=full]{color:var(--accent)}
+    .route-preview{font-size:11px;color:var(--text3);margin-bottom:8px;min-height:16px}
+    .file-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+    .file-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:16px;font-size:12px;font-family:var(--mono)}
+    .file-chip button{background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:0 2px}
+    .file-chip button:hover{color:var(--red)}
+    .input-box{position:relative}
+    .input-box textarea{width:100%;padding:14px 16px;padding-right:90px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;color:var(--text);font-family:var(--sans);font-size:15px;resize:none;min-height:52px;max-height:150px}
+    .input-box textarea:focus{outline:none;border-color:var(--accent)}
+    .input-box textarea::placeholder{color:var(--text3)}
+    .input-actions{position:absolute;right:8px;bottom:8px;display:flex;gap:6px}
+    .input-actions button{padding:10px 16px;background:var(--accent);border:none;border-radius:6px;color:var(--bg);font-weight:600;cursor:pointer;font-size:14px}
+    .input-actions button:disabled{opacity:.5;cursor:not-allowed}
+    .input-actions button.attach{background:transparent;color:var(--text2);padding:10px}
+    .input-hint{margin-top:8px;font-size:11px;color:var(--text3);display:flex;justify-content:space-between}
+    .cost-display{font-family:var(--mono)}
+    .modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px}
+    .modal.active{display:flex}
+    .modal-content{background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:100%;max-width:600px;max-height:80vh;display:flex;flex-direction:column}
+    .modal-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+    .modal-header h3{font-size:16px}
+    .modal-close{background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;padding:4px}
+    .modal-body{flex:1;overflow-y:auto;padding:16px 20px}
+    .file-search{width:100%;padding:12px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;margin-bottom:12px}
+    .file-tree{font-family:var(--mono);font-size:13px}
+    .file-item{padding:10px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px}
+    .file-item:hover{background:var(--bg4)}
+    .file-item.selected{background:rgba(88,166,255,.15);color:var(--accent)}
+    .modal-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px}
+    .modal-footer button{padding:10px 20px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer}
+    .btn-secondary{background:var(--bg3);border:1px solid var(--border);color:var(--text)}
+    .btn-primary{background:var(--accent);border:none;color:var(--bg)}
+
+    /* Patch Preview (Apply-as-PR v2) */
+    .patch-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+    .patch-controls label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2)}
+    .patch-summary{font-size:12px;color:var(--text3)}
+    .patch-list{display:flex;flex-direction:column;gap:8px}
+    .patch-item{border:1px solid var(--border);background:var(--bg3);border-radius:8px;padding:10px;display:flex;gap:10px;align-items:flex-start}
+    .patch-item input[type=checkbox]{margin-top:3px}
+    .patch-item .meta{flex:1;min-width:0}
+    .patch-item .path{font-family:var(--mono);font-size:13px;color:var(--text);word-break:break-word}
+    .patch-item .sub{font-size:11px;color:var(--text3);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .badge{font-size:10px;padding:2px 6px;border-radius:6px;background:var(--bg4);color:var(--text2);border:1px solid var(--border)}
+    .badge.added{border-color:rgba(63,185,80,.5);color:var(--green)}
+    .badge.modified{border-color:rgba(88,166,255,.5);color:var(--accent)}
+    .badge.deleted{border-color:rgba(248,81,73,.5);color:var(--red)}
+    .badge.risk{border-color:rgba(210,153,34,.6);color:var(--yellow)}
+    .mini-btn{background:none;border:1px solid var(--border);color:var(--text2);border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer}
+    .mini-btn:hover{background:var(--bg4);color:var(--text)}
+    .patch-warnings{margin-top:10px;color:var(--yellow);font-size:12px;white-space:pre-wrap}
+    .patch-result{margin-top:10px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg3);font-size:13px}
+    .patch-result a{color:var(--accent);text-decoration:none}
+    .patch-result a:hover{text-decoration:underline}
+
+    .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);padding:12px 20px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;display:none;z-index:2000;max-width:90%;text-align:center}
+    .toast.success{border-left:3px solid var(--green)}.toast.error{border-left:3px solid var(--red)}
+    .streaming-dot{width:6px;height:6px;background:var(--accent);border-radius:50%;animation:pulse 1.5s infinite;display:inline-block}
+    @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
+    .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:99}
+    ::-webkit-scrollbar{width:8px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+    
+    /* Mobile Responsive */
+    @media(max-width:768px){
+      .sidebar{position:fixed;top:0;left:0;bottom:0;transform:translateX(-100%);transition:transform .3s ease;width:85%;max-width:320px}
+      .sidebar.open{transform:translateX(0)}
+      .sidebar-overlay.open{display:block}
+      .close-sidebar{display:block}
+      .menu-btn{display:block}
+      .chat-header{padding:12px}
+      .messages{padding:12px}
+      .msg-content{padding-left:0;margin-top:8px}
+      .msg-header{flex-wrap:wrap}
+      .input-area{padding:10px 12px}
+      .model-toggle{width:100%;justify-content:center}
+      .model-toggle button{flex:1;padding:10px 8px;font-size:12px}
+      .input-box textarea{font-size:16px;padding-right:80px}
+      .input-hint{display:none}
+      .empty-state{padding:30px 16px}
+      .empty-state h2{font-size:20px}
+      .code-header{flex-direction:column;align-items:flex-start}
+      .code-header .code-actions{width:100%;justify-content:flex-end}
+    }
+  </style>
+</head>
+<body>
+  <div class="toast" id="toast"></div>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <h1>⚡ <span>AI Code Helper</span></h1>
+        <button class="close-sidebar" id="closeSidebar">×</button>
+      </div>
+      <div class="project-select"><label>Project</label><select id="projectSelect"><option value="">No project selected</option></select></div>
+      <div class="sidebar-actions">
+        <button class="action-btn primary" id="newProjectBtn">🚀 New Project</button>
+        <button class="action-btn secondary" id="newChatBtn">💬 New Chat</button>
+      </div>
+      <div class="conversations" id="conversations"></div>
+      <div class="sidebar-footer"><a href="/admin">⚙️ Admin Panel</a></div>
+    </aside>
+    <main class="main">
+      <header class="chat-header">
+        <button class="menu-btn" id="menuBtn">☰</button>
+        <span class="chat-title" id="chatTitle">New conversation</span>
+        <span class="model-indicator" id="modelIndicator"><span class="dot"></span>Ready</span>
+      </header>
+      <div class="messages" id="messages">
+        <div class="messages-inner" id="messagesInner">
+          <div class="empty-state" id="emptyState">
+            <h2>What would you like to build?</h2>
+            <p>Start a new project from scratch, or work on an existing one.</p>
+            <div class="empty-actions">
+              <button class="primary" id="emptyNewProject">🚀 Start New Project</button>
+              <button class="secondary" id="emptySelectProject">📂 Open Existing</button>
+            </div>
+            <p style="font-size:13px;color:var(--text3)">Or ask me anything:</p>
+            <div class="suggestions">
+              <button class="suggestion" data-text="Help me refactor this code">Refactor code</button>
+              <button class="suggestion" data-text="Debug this error">Debug error</button>
+              <button class="suggestion" data-text="Review my code">Code review</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="input-area">
+        <div class="input-inner">
+          <div class="mode-indicator" id="modeIndicator" style="display:none">
+            <span>Mode:</span>
+            <span class="mode-badge planning" id="modeBadge">Planning</span>
+          </div>
+          <div class="model-toggle" id="modelToggle">
+            <button class="active" data-mode="auto">🔀 Auto</button>
+            <button data-mode="fast">⚡ Fast</button>
+            <button data-mode="full">🔥 Full</button>
+          </div>
+          <div class="route-preview" id="routePreview">Auto mode: Type to see which model</div>
+          <div class="file-chips" id="fileChips"></div>
+          <div class="input-box">
+            <textarea id="messageInput" placeholder="Describe what you want to build..." rows="1"></textarea>
+            <div class="input-actions">
+              <button class="attach" id="attachBtn">📎</button>
+              <button id="sendBtn">Send</button>
+            </div>
+          </div>
+          <div class="input-hint"><span>Ctrl+Enter to send</span><span class="cost-display" id="costDisplay"></span></div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div class="modal" id="fileModal">
+    <div class="modal-content">
+      <div class="modal-header"><h3>📁 Add files</h3><button class="modal-close" id="closeFileModal">×</button></div>
+      <div class="modal-body"><input type="text" class="file-search" id="fileSearch" placeholder="Search..."><div class="file-tree" id="fileTree"></div></div>
+      <div class="modal-footer"><button class="btn-secondary" id="cancelFiles">Cancel</button><button class="btn-primary" id="confirmFiles">Add</button></div>
+    </div>
+  </div>
+
+  <div class="modal" id="patchModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>🧩 Patch Preview</h3>
+        <button class="modal-close" id="closePatchModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="patch-controls">
+          <label><input type="checkbox" id="allowPartialToggle"> Allow partial edits</label>
+          <div class="patch-summary" id="patchSummary"></div>
+        </div>
+        <div class="patch-list" id="patchList"></div>
+        <div class="patch-warnings" id="patchWarnings"></div>
+        <div class="patch-result" id="patchResult" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" id="cancelPatch">Cancel</button>
+        <button class="btn-primary" id="createPrBtn">Create Draft PR</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+marked.setOptions({highlight:(c,l)=>l&&hljs.getLanguage(l)?hljs.highlight(c,{language:l}).value:hljs.highlightAuto(c).value,breaks:true,gfm:true});
+
+
+function renderMarkdown(md){
+  const rendered = marked.parse(md||'');
+  const container = document.createElement('div');
+  container.innerHTML = rendered;
+
+  // Wrap every <pre><code> in a collapsible block with Copy + Create PR actions.
+  // This is DOM-based (not regex-based) so it survives markup/class order differences.
+  const codeNodes = Array.from(container.querySelectorAll('pre > code'));
+  for (const codeEl of codeNodes){
+    const raw = codeEl.textContent || '';
+    const cls = codeEl.getAttribute('class') || '';
+    const langMatch = cls.match(/language-([a-z0-9_+\-]+)/i);
+    const lang = (langMatch ? langMatch[1] : 'text').toLowerCase();
+
+    const explicitPath = extractFilePathFromCode(raw);
+    const fp = explicitPath || detectFilePath(raw, lang);
+    const label = explicitPath ? fp : (fp + ' (?)');
+    const uid = 'code-' + Math.random().toString(36).slice(2,9);
+
+    const details = document.createElement('details');
+    details.className = 'code-block';
+    details.open = true;
+
+    // Preserve innerHTML (may contain syntax highlighting spans).
+    const inner = codeEl.innerHTML;
+
+    details.innerHTML = `<summary class="code-header">
+        <div class="code-left">
+          <span class="code-caret">▶</span>
+          <span class="code-lang">${escapeHtml(label)}</span>
+          <span class="code-filename">${escapeHtml(lang)}</span>
+        </div>
+        <div class="code-actions">
+          <button type="button" class="copy-btn" onclick="copyCode('${uid}', event)">Copy</button>
+          <button type="button" class="apply-btn" data-codeid="${uid}" onclick="openPatchPreviewFromCode('${uid}', event)">Create PR</button>
+        </div>
+      </summary>
+      <div class="code-body">
+        <pre><code id="${uid}" class="${escapeHtml(cls || ('language-'+lang))}" data-suggested-path="${escapeHtml(fp)}">${inner}</code></pre>
+      </div>`;
+
+    const newCode = details.querySelector('code');
+    // Ensure hljs class is present for styles.
+    if (newCode && !/hljs/.test(newCode.className)) newCode.className = (newCode.className + ' hljs').trim();
+
+    const pre = codeEl.parentElement;
+    if (pre) pre.replaceWith(details);
+  }
+
+  return container.innerHTML;
+}
+
+const state={conversationId:null,conversations:[],loadedFiles:[],repoFiles:[],selectedFiles:new Set(),config:null,mode:'auto',chatMode:'building',totalCost:0,streaming:false};
+const $=id=>document.getElementById(id);
+function showToast(m,t='success'){const e=$('toast');e.textContent=m;e.className=`toast ${t}`;e.style.display='block';setTimeout(()=>e.style.display='none',4000)}
+function escapeHtml(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+// Sidebar toggle
+function openSidebar(){$('sidebar').classList.add('open');$('sidebarOverlay').classList.add('open')}
+function closeSidebar(){$('sidebar').classList.remove('open');$('sidebarOverlay').classList.remove('open')}
+$('menuBtn').onclick=openSidebar;
+$('closeSidebar').onclick=closeSidebar;
+$('sidebarOverlay').onclick=closeSidebar;
+
+async function loadConfig(){state.config=await(await fetch('/api/config')).json()}
+async function loadProjects(){try{const r=await(await fetch('/api/projects')).json();$('projectSelect').innerHTML='<option value="">No project</option>'+r.map(x=>`<option value="${x.fullName}">${x.fullName}</option>`).join('')}catch(e){}}
+async function loadConversations(){state.conversations=await(await fetch('/api/conversations')).json();renderConversations()}
+
+function renderConversations(){
+  $('conversations').innerHTML=state.conversations.length?state.conversations.map(c=>`<div class="conv-item${c.id===state.conversationId?' active':''}" data-id="${c.id}"><span>${c.type==='planning'?'🚀':'💬'}</span><span class="title">${escapeHtml(c.title)}</span>${c.type==='planning'?'<span class="type-badge planning">Plan</span>':''}</div>`).join(''):'<div style="padding:20px;text-align:center;color:var(--text3);font-size:13px">No chats yet</div>';
+  $('conversations').querySelectorAll('.conv-item').forEach(el=>el.onclick=()=>{loadConversation(el.dataset.id);closeSidebar()});
+}
+
+async function loadConversation(id){
+  const c=state.conversations.find(x=>x.id===id);if(!c)return;
+  state.conversationId=id;
+  state.chatMode=c.type||'building';
+  updateModeIndicator();
+  $('chatTitle').textContent=c.title;
+  if(c.repoFullName){$('projectSelect').value=c.repoFullName;await loadRepoFiles()}
+  renderMessages(c.messages);renderConversations();
+}
+
+function updateModeIndicator(){
+  if(state.chatMode==='planning'){
+    $('modeIndicator').style.display='flex';
+    $('modeBadge').textContent='Planning';
+    $('modeBadge').className='mode-badge planning';
+    $('messageInput').placeholder='Describe what you want to build...';
+  }else{
+    $('modeIndicator').style.display='none';
+    $('messageInput').placeholder='Ask me anything...';
+  }
+}
+
+function renderMessages(msgs){
+  if(!msgs?.length){$('emptyState').style.display='block';Array.from($('messagesInner').children).forEach(c=>{if(c!==$('emptyState'))c.remove()});return}
+  $('emptyState').style.display='none';
+  Array.from($('messagesInner').children).forEach(c=>{if(c!==$('emptyState'))c.remove()});
+  msgs.forEach(m=>appendMessage(m.role,m.content,m.model,false));
+  $('messages').scrollTop=$('messages').scrollHeight;
+}
+
+function appendMessage(role,content,model='',animate=true){
+  $('emptyState').style.display='none';
+  const msg=document.createElement('div');msg.className=`message ${role}`;if(!animate)msg.style.animation='none';
+  const time=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  msg.innerHTML=`<div class="msg-header"><div class="msg-avatar">${role==='user'?'Y':'AI'}</div><span class="msg-author">${role==='user'?'You':'Assistant'}</span><span class="msg-meta">${time}${model?' · '+model:''}</span></div><div class="msg-content"></div>`;
+  const cel=msg.querySelector('.msg-content');
+  if(role==='assistant'){cel.innerHTML=renderMarkdown(content)}else{cel.innerHTML=`<p>${escapeHtml(content)}</p>`}
+  $('messagesInner').appendChild(msg);return msg;
+}
+
+
+function guessFilePathByLang(lang){
+  const p={'javascript':'script.js','js':'script.js','typescript':'script.ts','ts':'script.ts','jsx':'component.jsx','tsx':'component.tsx','python':'script.py','py':'script.py','html':'index.html','css':'styles.css','json':'data.json','md':'README.md'};
+  return p[lang]||'file.txt';
+}
+
+function extractFilePathFromCode(code){
+  const lines=code.split('\n').slice(0,30);
+  const re1=/^\s*(?:\/\/|#|;|<!--|\/\*|\*)\s*(?:filepath|file path|file|path)\s*:\s*([^\s]+)\s*(?:-->|\*\/)?\s*$/i;
+  const re2=/^\s*(?:\/\/|#|;|<!--|\/\*|\*)\s*([a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)+\.[a-zA-Z0-9]+)\s*(?:-->|\*\/)?\s*$/;
+  for(const line of lines){
+    let m=line.match(re1);if(m)return m[1];
+    m=line.match(re2);if(m)return m[1];
+  }
+  return null;
+}
+
+function looksLikeDiff(code){
+  return /(^|\n)(@@|\+\+\+ |--- )/m.test(code);
+}
+
+function looksPartial(code){
+  const markers=[
+    /(^|\n)\s*\.{3}\s*$/m,
+    /\(truncated\)/i,
+    /\b(existing code|rest of the file|your code here|insert here|fill in|snip)\b/i,
+    /\bTODO:\s*(?:fill|replace|implement)\b/i
+  ];
+  return markers.some(r=>r.test(code));
+}
+
+function detectFilePath(code,lang){
+  return extractFilePathFromCode(code)||guessFilePathByLang(lang);
+}
+
+function bytesToHuman(n){
+  if(n<1024)return `${n} B`;
+  if(n<1024*1024)return `${(n/1024).toFixed(1)} KB`;
+  return `${(n/1024/1024).toFixed(2)} MB`;
+}
+
+function inferChangeType(filePath){
+  if(!filePath)return 'unknown';
+  if(Array.isArray(state.repoFiles)&&state.repoFiles.includes(filePath))return 'modified';
+  return 'added';
+}
+
+function assessCodeBlock(code, explicitPath){
+  const warnings=[];
+  const deletes=selectedNow.filter(p=>p.action==='delete');
+  if(deletes.length)warnings.push(`⚠️ Deleting ${deletes.length} file(s). Double-check paths before proceeding.`);
+  const isDiff=looksLikeDiff(code);
+  const isPartial=looksPartial(code);
+  if(!explicitPath)warnings.push('Missing filepath marker (example: // filepath: src/app.js)');
+  if(isDiff)warnings.push('Looks like a diff/patch, not a full file');
+  if(isPartial)warnings.push('Contains placeholders/ellipsis; may be partial');
+  const isFull=!isDiff && !isPartial;
+  return { isFull, warnings };
+}
+
+function collectPatchesFromMessage(messageEl){
+  const blocks=[...messageEl.querySelectorAll('details.code-block')];
+  const patches=[];
+  for(const b of blocks){
+    const codeEl=b.querySelector('code[id]');
+    if(!codeEl)continue;
+    const code=codeEl.textContent||'';
+    const lang=(codeEl.className.match(/language-([a-z0-9]+)/i)||[])[1]||'';
+    const explicitPath=extractFilePathFromCode(code);
+    const suggested=codeEl.getAttribute('data-suggested-path')||'';
+    const guessed=suggested||guessFilePathByLang(lang);
+    const filePath=(explicitPath||guessed||'').trim();
+    const bytes=(new TextEncoder()).encode(code).length;
+    const {isFull,warnings}=assessCodeBlock(code, explicitPath);
+    const changeType=inferChangeType(filePath);
+
+    const itemWarnings=[...warnings];
+    if(!filePath)itemWarnings.push('Missing file path');
+    if(bytes>200_000)itemWarnings.push(`Large file (${bytesToHuman(bytes)})`);
+    patches.push({ codeId:codeEl.id, filePath, explicitPath:!!explicitPath, action:'upsert', content:code, bytes, isFull, warnings:itemWarnings, selected:true, changeType });
+  }
+
+  // Duplicate path warning
+  const seen={};
+  patches.forEach((p)=>{
+    if(!p.filePath)return;
+    if(seen[p.filePath]){p.warnings.push('Duplicate file path in selection');seen[p.filePath].warnings.push('Duplicate file path in selection');}
+    else seen[p.filePath]=p;
+  });
+
+  return patches;
+}
+
+// Patch Preview modal state
+const patchState={ patches:[], messageEl:null };
+
+function openPatchModal(patches, messageEl){
+  patchState.patches=patches;
+  patchState.messageEl=messageEl;
+  $('patchResult').style.display='none';
+  $('patchResult').innerHTML='';
+  $('allowPartialToggle').checked=false;
+  renderPatchModal();
+  $('patchModal').classList.add('active');
+}
+
+function closePatchModal(){
+  $('patchModal').classList.remove('active');
+}
+
+function renderPatchModal(){
+  const allowPartial=$('allowPartialToggle').checked;
+  const list=$('patchList');
+  list.innerHTML='';
+
+  const selected=patchState.patches.filter(p=>p.selected);
+  const blocked=selected.filter(p=>p.action!=='delete' && !p.isFull);
+  const risky=selected.filter(p=>p.warnings.length>0);
+
+  $('patchSummary').textContent = `${selected.length}/${patchState.patches.length} selected • ${blocked.length?blocked.length+' needs review':''}`;
+
+  for(let i=0;i<patchState.patches.length;i++){
+    const p=patchState.patches[i];
+    const typeBadge=p.action==='delete' ? '<span class="badge deleted">deleted</span>' : (p.changeType==='added'?'<span class="badge added">added</span>':(p.changeType==='modified'?'<span class="badge modified">modified</span>':'<span class="badge">unknown</span>'));
+    const riskBadge=p.warnings.length?'<span class="badge risk">warnings</span>':'';
+    const fullBadge=p.action==='delete' ? '<span class="badge deleted">delete</span>' : (p.isFull?'<span class="badge">full file</span>':'<span class="badge risk">unclear</span>');
+    const guessedBadge=p.explicitPath?'':'<span class="badge risk">path guessed</span>';
+    const warnText=p.warnings.length?p.warnings.join(' • '):'';
+
+    const row=document.createElement('div');
+    row.className='patch-item';
+    row.innerHTML=`
+      <input type="checkbox" ${p.selected?'checked':''} data-idx="${i}" class="patch-select">
+      <div class="meta">
+        <div class="path">${escapeHtml(p.filePath||'(choose path)')}</div>
+        <div class="sub">
+          ${typeBadge}
+          ${fullBadge}
+          ${guessedBadge}
+          ${riskBadge}
+          <span class="badge">${bytesToHuman(p.bytes)}</span>
+          <button type="button" class="mini-btn edit-path" data-idx="${i}">Edit path</button>
+          <button type="button" class="mini-btn toggle-delete" data-idx="${i}">${p.action==='delete'?'Undo delete':'Delete'}</button>
+        </div>
+        ${warnText?`<div class="sub" style="color:var(--yellow)">${escapeHtml(warnText)}</div>`:''}
+      </div>
+    `;
+    list.appendChild(row);
+  }
+
+  // Bind events
+  list.querySelectorAll('.patch-select').forEach(cb=>{
+    cb.onchange=(e)=>{
+      const idx=Number(e.target.getAttribute('data-idx'));
+      patchState.patches[idx].selected=e.target.checked;
+      renderPatchModal();
+    };
+  });
+  list.querySelectorAll('.edit-path').forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.preventDefault();e.stopPropagation();
+      const idx=Number(btn.getAttribute('data-idx'));
+      const current=patchState.patches[idx].filePath||'';
+      const next=prompt('File path to save:', current);
+      if(next===null)return;
+      patchState.patches[idx].filePath=(next||'').trim();
+      patchState.patches[idx].changeType=inferChangeType(patchState.patches[idx].filePath);
+      renderPatchModal();
+    };
+  });
+  list.querySelectorAll('.toggle-delete').forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.preventDefault();e.stopPropagation();
+      const idx=Number(btn.getAttribute('data-idx'));
+      const p=patchState.patches[idx];
+      p.action = (p.action==='delete') ? 'upsert' : 'delete';
+      // Always warn on deletes
+      if(p.action==='delete' && !p.warnings.includes('Delete file')) p.warnings.push('Delete file');
+      renderPatchModal();
+    };
+  });
+
+  // Global warnings + button state
+  const selectedNow=patchState.patches.filter(p=>p.selected);
+  const blockedNow=selectedNow.filter(p=>p.action!=='delete' && !p.isFull);
+  const missingPath=selectedNow.filter(p=>!p.filePath);
+
+  const warnings=[];
+  const deletes=selectedNow.filter(p=>p.action==='delete');
+  if(deletes.length)warnings.push(`⚠️ Deleting ${deletes.length} file(s). Double-check paths before proceeding.`);
+  if(missingPath.length)warnings.push(`Missing file path for ${missingPath.length} item(s). Click "Edit path".`);
+  if(blockedNow.length && !allowPartial)warnings.push(`Refusing to apply ${blockedNow.length} item(s) because they don't look like full files. Toggle "Allow partial edits" or unselect them.`);
+  $('patchWarnings').textContent = warnings.join('\n');
+
+  $('createPrBtn').disabled = (selectedNow.length===0) || (missingPath.length>0) || (blockedNow.length>0 && !allowPartial);
+}
+
+
+async function createDraftPr(){
+  const repo=$('projectSelect').value;
+  if(!repo){showToast('Select a project first','error');return}
+  const allowPartial=$('allowPartialToggle').checked;
+  const selected=patchState.patches.filter(p=>p.selected);
+
+  if(!selected.length){showToast('Select at least one file','error');return}
+
+  const missingPath=selected.filter(p=>!p.filePath);
+  if(missingPath.length){showToast('Missing file path. Click "Edit path".','error');return}
+
+  const blocked=selected.filter(p=>p.action!=='delete' && !p.isFull);
+  if(blocked.length && !allowPartial){
+    showToast('Refusing to apply partial/unclear code blocks. Toggle "Allow partial edits" to override.','error');
+    return;
+  }
+
+  const patches=selected.map(p=>{const obj={ filePath:p.filePath, action:p.action }; if(p.action!=='delete') obj.content=p.content; return obj;});
+
+  $('createPrBtn').disabled=true;
+  $('createPrBtn').textContent='Creating...';
+
+  try{
+    const res=await fetch('/api/apply-pr',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        repoFullName:repo,
+        conversationId:state.conversationId||'new',
+        patches,
+        prTitle:`AI Apply (${patches.length} file${patches.length===1?'':'s'})`,
+        prBody:`Draft PR created by AI Code Helper.\n\nConversation: ${state.conversationId||'new'}`,
+        commitMessage:`AI Apply: ${patches.length} file${patches.length===1?'':'s'}`
+      })
+    });
+    const data=await res.json();
+    if(data.error)throw new Error(data.error);
+
+    const url=data.prUrl;
+    $('patchResult').style.display='block';
+    $('patchResult').innerHTML=`✅ Draft PR created: <a href="${url}" target="_blank" rel="noopener">Open Pull Request</a>`;
+    showToast('Draft PR created');
+
+    // Mark apply buttons for included code blocks
+    if(patchState.messageEl){
+      selected.forEach(p=>{
+        const btn=patchState.messageEl.querySelector(`button.apply-btn[data-codeid="${p.codeId}"]`);
+        if(btn){btn.textContent='PR ✓';btn.classList.add('applied');}
+      });
+    }
+  }catch(e){
+    showToast('Failed: '+e.message,'error');
+  }finally{
+    $('createPrBtn').disabled=false;
+    $('createPrBtn').textContent='Create Draft PR';
+  }
+}
+
+// Patch modal events
+$('closePatchModal').onclick=()=>closePatchModal();
+$('cancelPatch').onclick=()=>closePatchModal();
+$('allowPartialToggle').onchange=()=>renderPatchModal();
+$('createPrBtn').onclick=()=>createDraftPr();
+$('patchModal').onclick=e=>{if(e.target===$('patchModal'))closePatchModal()};
+
+$('modelToggle').querySelectorAll('button').forEach(b=>{b.onclick=()=>{$('modelToggle').querySelectorAll('button').forEach(x=>x.classList.remove('active'));b.classList.add('active');state.mode=b.dataset.mode;updateRoutePreview()}});
+
+async function updateRoutePreview(){
+  const m=$('messageInput').value;
+  if(state.mode!=='auto'){const x=state.config?.models?.[state.mode];$('routePreview').textContent=x?`Using: ${x.displayName}`:'';return}
+  if(!m.trim()){$('routePreview').textContent='Auto mode: Type to see which model';return}
+  try{const r=await(await fetch('/api/preview-route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m,hasFiles:state.loadedFiles.length>0})})).json();$('routePreview').textContent=`Auto → ${r.displayName}: ${r.reason}`}catch(e){$('routePreview').textContent='Auto mode'}
+}
+
+let pt;$('messageInput').addEventListener('input',()=>{$('messageInput').style.height='auto';$('messageInput').style.height=Math.min($('messageInput').scrollHeight,150)+'px';clearTimeout(pt);pt=setTimeout(updateRoutePreview,300)});
+
+function startNewProject(){
+  state.conversationId=null;
+  state.loadedFiles=[];
+  state.chatMode='planning';
+  updateModeIndicator();
+  $('chatTitle').textContent='New Project';
+  $('projectSelect').value='';
+  renderMessages([]);
+  renderFileChips();
+  renderConversations();
+  $('messageInput').focus();
+  closeSidebar();
+}
+
+function startNewChat(){
+  state.conversationId=null;
+  state.loadedFiles=[];
+  state.chatMode='building';
+  updateModeIndicator();
+  $('chatTitle').textContent='New conversation';
+  renderMessages([]);
+  renderFileChips();
+  renderConversations();
+  $('messageInput').focus();
+  closeSidebar();
+}
+
+$('newProjectBtn').onclick=startNewProject;
+$('newChatBtn').onclick=startNewChat;
+$('emptyNewProject').onclick=startNewProject;
+$('emptySelectProject').onclick=()=>{openSidebar();$('projectSelect').focus()};
+
+async function loadRepoFiles(){const r=$('projectSelect').value;if(!r){state.repoFiles=[];return}try{const[o,n]=r.split('/');const d=await(await fetch(`/api/projects/${o}/${n}/files`)).json();state.repoFiles=d.files||[]}catch(e){state.repoFiles=[]}}
+$('projectSelect').onchange=async()=>{await loadRepoFiles();if($('projectSelect').value&&state.chatMode==='planning'){state.chatMode='building';updateModeIndicator()}};
+
+$('attachBtn').onclick=()=>{if(!$('projectSelect').value){showToast('Select project first','error');return}state.selectedFiles=new Set(state.loadedFiles);renderFileTree();$('fileModal').classList.add('active')};
+
+function renderFileTree(f=''){
+  const fl=state.repoFiles.filter(x=>x.toLowerCase().includes(f.toLowerCase()));
+  $('fileTree').innerHTML=fl.slice(0,100).map(x=>`<div class="file-item${state.selectedFiles.has(x)?' selected':''}" data-path="${x}">📄 ${x}</div>`).join('')+(fl.length>100?`<div style="padding:10px;color:var(--text3)">...${fl.length-100} more</div>`:'');
+  $('fileTree').querySelectorAll('.file-item').forEach(e=>e.onclick=()=>{const p=e.dataset.path;if(state.selectedFiles.has(p)){state.selectedFiles.delete(p);e.classList.remove('selected')}else{state.selectedFiles.add(p);e.classList.add('selected')}});
+}
+
+$('fileSearch').oninput=e=>renderFileTree(e.target.value);
+$('closeFileModal').onclick=$('cancelFiles').onclick=()=>$('fileModal').classList.remove('active');
+$('confirmFiles').onclick=()=>{state.loadedFiles=Array.from(state.selectedFiles);renderFileChips();$('fileModal').classList.remove('active')};
+$('fileModal').onclick=e=>{if(e.target===$('fileModal'))$('fileModal').classList.remove('active')};
+
+function renderFileChips(){$('fileChips').innerHTML=state.loadedFiles.map(f=>`<div class="file-chip"><span>📄 ${f.split('/').pop()}</span><button onclick="removeFile('${f}')">×</button></div>`).join('')}
+window.removeFile=p=>{state.loadedFiles=state.loadedFiles.filter(f=>f!==p);renderFileChips()};
+
+async function sendMessage(){
+  const m=$('messageInput').value.trim();if(!m||state.streaming)return;
+  state.streaming=true;$('sendBtn').disabled=true;$('sendBtn').textContent='...';
+  appendMessage('user',m);$('messageInput').value='';$('messageInput').style.height='auto';$('messages').scrollTop=$('messages').scrollHeight;
+  const aMsg=appendMessage('assistant','');const cel=aMsg.querySelector('.msg-content');cel.innerHTML='<span class="streaming-dot"></span> Thinking...';
+  try{
+    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversationId:state.conversationId,message:m,repoFullName:$('projectSelect').value,loadedFiles:state.loadedFiles,modelOverride:state.mode,mode:state.chatMode})});
+    const reader=res.body.getReader();const dec=new TextDecoder();let full='';
+    while(true){const{done,value}=await reader.read();if(done)break;
+      for(const line of dec.decode(value).split('\n')){if(!line.startsWith('data: '))continue;
+        try{const d=JSON.parse(line.slice(6));
+          if(d.type==='start'){state.conversationId=d.conversationId;$('modelIndicator').innerHTML=`<span class="dot"></span>${d.model}`}
+          else if(d.type==='text'){full+=d.text;cel.innerHTML=renderMarkdown(full);$('messages').scrollTop=$('messages').scrollHeight}
+          else if(d.type==='done'){
+            if(d.cost){state.totalCost+=d.cost;$('costDisplay').textContent=`Session: $${state.totalCost.toFixed(4)}`}
+            aMsg.querySelector('.msg-meta').textContent+=` · ${d.model}`;
+            if(d.projectCreated){
+              showToast(`Project created: ${d.projectCreated.repoFullName}`);
+              await loadProjects();
+              $('projectSelect').value=d.projectCreated.repoFullName;
+              await loadRepoFiles();
+              state.chatMode='building';
+              updateModeIndicator();
+            }
+            loadConversations();
+          }
+          else if(d.type==='error'){cel.innerHTML=`<p style="color:var(--red)">Error: ${d.error}</p>`}
+        }catch(e){}}
+    }
+  }catch(e){cel.innerHTML=`<p style="color:var(--red)">Failed to send</p>`}
+  finally{state.streaming=false;$('sendBtn').disabled=false;$('sendBtn').textContent='Send'}
+}
+
+$('sendBtn').onclick=sendMessage;
+$('messageInput').onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();sendMessage()}};
+document.querySelectorAll('.suggestion').forEach(s=>s.onclick=()=>{$('messageInput').value=s.dataset.text;$('messageInput').focus();updateRoutePreview()});
+
+loadConfig();loadProjects();loadConversations();
+
+
+// Expose toolbar handlers as globals (buttons use inline onclick).
+window.copyCode = function(id, evt){
+  try{
+    if(evt){evt.preventDefault();evt.stopPropagation();}
+    const el=document.getElementById(id);
+    if(!el){showToast('Code not found','error');return;}
+    const text=el.textContent||'';
+    navigator.clipboard.writeText(text);
+    showToast('Copied!');
+  }catch(err){
+    console.error(err);
+    showToast('Copy failed','error');
+  }
+};
+
+window.openPatchPreviewFromCode = function(codeId, evt){
+  try{
+    if(evt){evt.preventDefault();evt.stopPropagation();}
+    const repo = $('projectSelect')?.value;
+    if(!repo){showToast('Select a project first','error');return;}
+    const codeEl=document.getElementById(codeId);
+    if(!codeEl){showToast('Code not found','error');return;}
+
+    // Find the assistant message that contains this code block, then collect all code blocks in that message.
+    const messageEl = codeEl.closest('.message.assistant') || codeEl.closest('.message');
+    if(!messageEl){showToast('Could not locate message container','error');return;}
+
+    const patches = collectPatchesFromMessage(messageEl);
+    if(!patches.length){showToast('No code blocks found in this message','error');return;}
+
+    openPatchModal(patches, messageEl);
+  }catch(err){
+    console.error(err);
+    showToast(err?.message || 'Failed to open Patch Preview','error');
+  }
+};
+
+</script>
+</body>
+</html>
