@@ -14,11 +14,11 @@
     },
     "full": {
       "id": "full",
-      "provider": "openai",
-      "model": "gpt-5.2",
-      "displayName": "GPT-5.2",
-      "description": "Full reasoning model for complex tasks (Responses API)",
-      "inputCost": 5.0,
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5-20250929",
+      "displayName": "Claude Sonnet 4.5",
+      "description": "Best coding model for complex tasks",
+      "inputCost": 3.0,
       "outputCost": 15.0,
       "maxOutputTokens": 64000,
       "contextWindow": 200000,
@@ -26,26 +26,14 @@
     },
     "fallback": {
       "id": "fallback",
-      "provider": "anthropic",
-      "model": "claude-sonnet-4-5-20250929",
-      "displayName": "Claude Sonnet 4.5",
-      "description": "Fallback if OpenAI is unavailable",
-      "inputCost": 3.0,
-      "outputCost": 15.0,
-      "maxOutputTokens": 64000,
-      "contextWindow": 200000,
-      "enabled": true
-    },
-    "longContext": {
-      "id": "longContext",
-      "provider": "google",
-      "model": "gemini-3-pro-preview",
-      "displayName": "Gemini 3 Pro (Preview)",
-      "description": "Auto-used for very large contexts to avoid dropping files/history",
-      "inputCost": 1.0,
-      "outputCost": 4.0,
-      "maxOutputTokens": 8192,
-      "contextWindow": 1000000,
+      "provider": "openai",
+      "model": "gpt-4o",
+      "displayName": "GPT-4o",
+      "description": "Alternative for second opinions",
+      "inputCost": 2.5,
+      "outputCost": 10.0,
+      "maxOutputTokens": 16384,
+      "contextWindow": 128000,
       "enabled": true
     }
   },
@@ -149,5 +137,5 @@
       ]
     }
   },
-  "schemaVersion": 3
+  "schemaVersion": 2
 }

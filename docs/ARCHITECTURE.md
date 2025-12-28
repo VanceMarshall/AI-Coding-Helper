@@ -1,76 +1,62 @@
 # Architecture
 
-This project is intentionally structured so there is **one authoritative backend** and **one authoritative UI directory**, to avoid the "two copies of code" problem.
+## Overview
 
-## High-level flow
+The app is a single Node server (`config/server.js`) that:
 
-1. The platform runs `npm start`.
-2. `server.js` (repo root) is a **thin entrypoint** that imports/starts `config/server.js`.
-3. `config/server.js`:
-   * Serves the web UI from `config/public/`.
-   * Exposes API routes under `/api/*`.
-   * Streams provider outputs back to the UI.
-4. Provider logic lives in `config/providers/index.js`.
-5. Runtime config lives in `config/config/...`.
-6. Persistent data (chat history, admin changes, etc.) lives in `data/`.
+- Serves the UI from `config/public`
+- Streams model output back to the browser using SSE
+- Loads repo files from GitHub as context
+- Persists conversations and runtime config under `DATA_DIR`
 
-## Authoritative directories
+## Key runtime paths
 
-### Backend
+- **Entrypoint:** `config/server.js`
+- **Providers:** `config/providers/*`
+- **UI:** `config/public/*`
+- **Default model config (template):** `config/config/models.json`
+- **Runtime state:** `${DATA_DIR}/models.json`, `${DATA_DIR}/secrets.json`, `${DATA_DIR}/conversations.json`, etc.
 
-* **Authoritative backend:** `config/server.js`
-* **Entrypoint:** `server.js`
+## Chat request flow
 
-Why: it keeps deployments predictable and avoids accidentally editing a shadow copy of the backend.
+1. Browser calls `POST /api/chat`
+2. Server:
+   - Determines repo + file list (if available)
+   - Auto-loads a small set of key files into `fileContents`
+   - Builds a system prompt that embeds full files under a token budget (all-or-omit)
+   - Streams completion chunks as SSE to the browser
+3. If the assistant requests files via:
+   - `[READ_FILE: path/to/file]`
+   the server:
+   - Loads those files into `fileContents`
+   - Rebuilds the system prompt with the new context
+   - Automatically runs another completion pass and continues streaming
+   - This repeats up to `AUTO_FILE_PASSES` times (default: 2)
 
-### Frontend
+This prevents the “assistant only asks for files and never answers” failure mode.
 
-* **Authoritative static UI:** `config/public/`
+## Context budgeting
 
-Why: any legacy `/public` directory (if present in older versions) should not be used by the runtime server.
-
-### Model configuration
-
-* **Authoritative model config:** `config/config/models.json`
-
-The admin panel reads and writes model selections based on this config (and on the persisted admin overrides under `data/`).
-
-## Provider architecture
-
-All LLM calls are routed through:
-
-* `config/providers/index.js`
-
-That module:
-
-* Initializes provider SDKs (OpenAI, Anthropic) and stores provider availability.
-* Exposes a single streaming generator: `streamCompletion(...)`.
-
-### OpenAI
-
-* GPT-5-family models are routed through the **Responses API**.
-* If a fallback to Chat Completions is ever needed, the code uses `max_completion_tokens` (not `max_tokens`) for compatibility with newer reasoning models.
-
-### Anthropic
-
-* Uses the Anthropic streaming SDK.
-
-### Google
-
-* Uses the Google Gemini REST API streaming path currently implemented in this repo.
+- `CONTEXT_BUDGET_TOKENS` controls how much context is embedded in the system prompt.
+- Files are never partially truncated; if adding a file would exceed the budget, it is omitted and listed.
 
 ## Persistence
 
-* Persistent directory: `data/`
-* Railway recommendation: mount a volume at `/app/data`.
+Set `DATA_DIR` to a mounted volume in production so:
+- Admin password does not reset
+- Runtime model selection persists
+- Conversation history persists
 
-Anything stored here should be treated as runtime state (safe to delete if you want a clean reset, but you will lose stored chats/admin overrides).
+## Applying changes (Pull Requests)
 
-## Deployment invariants ("bulletproof" rules)
+The UI renders code blocks with a **Create PR** button. This calls `POST /api/apply-change`.
 
-1. Only run `node config/server.js` (via `npm start`).
-2. Only serve UI from `config/public/`.
-3. Only read the active model list from `config/config/models.json`.
-4. Only persist runtime state under `data/`.
+`/api/apply-change`:
 
-If you keep those 4 invariants true, you won't end up with split-brain behavior between two folders.
+1. Detects the repo's default branch
+2. Creates a unique branch (e.g. `ai-change/<timestamp>-<rand>`) from the default branch HEAD
+3. Commits the updated file to that branch
+4. Opens a **Draft Pull Request** back to the default branch
+5. Returns the PR URL to the UI (which opens it automatically)
+
+This is intentionally safer than committing directly to the default branch.

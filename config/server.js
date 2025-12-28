@@ -23,9 +23,8 @@ const DATA_DIR = process.env.DATA_DIR || path.join(ROOT_DIR, 'data');
 
 // Model routing/config lives in a JSON file. We bootstrap it into DATA_DIR on first run
 // so admin changes survive redeploys.
-// IMPORTANT: the bundled defaults live under /config/config/models.json (single source of truth).
-const DEFAULT_CONFIG_PATH = path.join(__dirname, 'config', 'models.json');
-const LEGACY_DEFAULT_CONFIG_PATH = path.join(__dirname, 'models.json');
+const DEFAULT_CONFIG_PATH = path.join(__dirname, 'models.json');
+const LEGACY_DEFAULT_CONFIG_PATH = path.join(__dirname, 'config', 'models.json');
 const CONFIG_PATH = path.join(DATA_DIR, 'models.json');
 
 // Secrets (hashed admin password + optional provider keys if you choose to store them)
@@ -39,14 +38,6 @@ const statsPath = path.join(DATA_DIR, 'stats.json');
 
 const adminSessions = new Map();
 const SESSION_DURATION = 24 * 60 * 60 * 1000;
-
-// Context safety: budgets are in *estimated tokens*.
-// These defaults are intentionally high so omissions are rare.
-const CONTEXT_BUDGET_TOKENS = Number.parseInt(process.env.CONTEXT_BUDGET_TOKENS || process.env.CONTEXT_BUDGET || '140000', 10);
-const HISTORY_BUDGET_TOKENS = Number.parseInt(process.env.HISTORY_BUDGET_TOKENS || '60000', 10);
-const LONG_CONTEXT_BUDGET_TOKENS = Number.parseInt(process.env.LONG_CONTEXT_BUDGET_TOKENS || '500000', 10);
-const LONG_CONTEXT_THRESHOLD_TOKENS = Number.parseInt(process.env.LONG_CONTEXT_THRESHOLD_TOKENS || String(CONTEXT_BUDGET_TOKENS), 10);
-const MAX_FILE_EMIT_CHARS = Number.parseInt(process.env.MAX_FILE_EMIT_CHARS || '250000', 10);
 
 // Key files to auto-load for different project types
 const AUTO_LOAD_FILES = {
@@ -63,58 +54,13 @@ const IMPORTANT_DIRS = ['src', 'app', 'pages', 'components', 'lib', 'utils', 'ap
 async function loadConfig() {
   try {
     const text = await fs.readFile(CONFIG_PATH, 'utf8');
-    const cfg = JSON.parse(text);
-    // Always merge in any missing keys from the bundled defaults so new features
-    // (e.g., longContext model) don't require a manual reset.
-    try {
-      const defaults = JSON.parse(await fs.readFile(DEFAULT_CONFIG_PATH, 'utf8'));
-      return mergeMissingConfig(cfg, defaults);
-    } catch {
-      return cfg;
-    }
+    return JSON.parse(text);
   } catch (err) {
     // If we haven't bootstrapped config yet, fall back to the bundled default.
     const fallbackPath = DEFAULT_CONFIG_PATH;
     const text = await fs.readFile(fallbackPath, 'utf8');
     return JSON.parse(text);
   }
-}
-
-function mergeMissingConfig(cfg, defaults) {
-  const out = cfg && typeof cfg === 'object' ? cfg : {};
-  const def = defaults && typeof defaults === 'object' ? defaults : {};
-
-  // Top-level
-  for (const k of Object.keys(def)) {
-    if (out[k] === undefined) out[k] = def[k];
-  }
-
-  // Models
-  out.models = out.models && typeof out.models === 'object' ? out.models : {};
-  const defModels = def.models && typeof def.models === 'object' ? def.models : {};
-  for (const k of Object.keys(defModels)) {
-    if (!out.models[k]) out.models[k] = defModels[k];
-  }
-
-  // Routing
-  out.routing = out.routing && typeof out.routing === 'object' ? out.routing : {};
-  const defRouting = def.routing && typeof def.routing === 'object' ? def.routing : {};
-  for (const k of Object.keys(defRouting)) {
-    if (out.routing[k] === undefined) out.routing[k] = defRouting[k];
-  }
-  out.routing.thresholds = out.routing.thresholds && typeof out.routing.thresholds === 'object' ? out.routing.thresholds : {};
-  const defTh = defRouting.thresholds && typeof defRouting.thresholds === 'object' ? defRouting.thresholds : {};
-  for (const k of Object.keys(defTh)) {
-    if (out.routing.thresholds[k] === undefined) out.routing.thresholds[k] = defTh[k];
-  }
-
-  // Providers/Templates
-  out.providers = out.providers && typeof out.providers === 'object' ? out.providers : def.providers;
-  out.templates = out.templates && typeof out.templates === 'object' ? out.templates : def.templates;
-
-  if (out.schemaVersion === undefined && def.schemaVersion !== undefined) out.schemaVersion = def.schemaVersion;
-
-  return out;
 }
 
 async function saveConfig(config) {
@@ -308,25 +254,129 @@ async function createGitHubRepo(name, description, isPrivate = true) {
   return res.json();
 }
 
-async function createOrUpdateFile(repoFullName, filePath, content, message) {
+async function createOrUpdateFile(repoFullName, filePath, content, message, branch = null) {
   const token = await getGitHubToken();
   if (!token) throw new Error("GITHUB_TOKEN is not set");
   const { owner, repo } = parseRepoFullName(repoFullName);
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeGitHubPath(filePath)}`;
+
+  const baseUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeGitHubPath(filePath)}`;
   const headers = { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-  
+
+  const existingUrl = branch ? `${baseUrl}?ref=${encodeURIComponent(branch)}` : baseUrl;
+
   let sha;
   try {
-    const existing = await fetch(url, { headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` } });
+    const existing = await fetch(existingUrl, { headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` } });
     if (existing.ok) sha = (await existing.json()).sha;
   } catch (e) {}
-  
-  const body = { message, content: Buffer.from(content, "utf8").toString("base64") };
+
+  const body = {
+    message,
+    content: Buffer.from(content, "utf8").toString("base64"),
+  };
   if (sha) body.sha = sha;
-  
-  const res = await fetch(url, { method: "PUT", headers, body: JSON.stringify(body) });
+  if (branch) body.branch = branch;
+
+  const res = await fetch(baseUrl, { method: "PUT", headers, body: JSON.stringify(body) });
   if (!res.ok) throw new Error(`Failed to create file: ${await res.text()}`);
   return res.json();
+}
+
+async function getRepoInfo(repoFullName) {
+  const token = await getGitHubToken();
+  if (!token) throw new Error("GITHUB_TOKEN is not set");
+  const { owner, repo } = parseRepoFullName(repoFullName);
+  const url = `https://api.github.com/repos/${owner}/${repo}`;
+  const res = await fetch(url, {
+    headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error(`Failed to get repo info: ${await res.text()}`);
+  return res.json();
+}
+
+async function getBranchHeadSha(repoFullName, branch) {
+  const token = await getGitHubToken();
+  if (!token) throw new Error("GITHUB_TOKEN is not set");
+  const { owner, repo } = parseRepoFullName(repoFullName);
+  const url = `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${encodeURIComponent(branch)}`;
+  const res = await fetch(url, {
+    headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}` }
+  });
+  if (!res.ok) throw new Error(`Failed to get branch ref: ${await res.text()}`);
+  const data = await res.json();
+  return data?.object?.sha;
+}
+
+async function createBranchFromSha(repoFullName, branchName, sha) {
+  const token = await getGitHubToken();
+  if (!token) throw new Error("GITHUB_TOKEN is not set");
+  const { owner, repo } = parseRepoFullName(repoFullName);
+  const url = `https://api.github.com/repos/${owner}/${repo}/git/refs`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha })
+  });
+  if (!res.ok) throw new Error(`Failed to create branch: ${await res.text()}`);
+  return res.json();
+}
+
+async function createPullRequest(repoFullName, { title, head, base, body, draft = true }) {
+  const token = await getGitHubToken();
+  if (!token) throw new Error("GITHUB_TOKEN is not set");
+  const { owner, repo } = parseRepoFullName(repoFullName);
+  const url = `https://api.github.com/repos/${owner}/${repo}/pulls`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ title, head, base, body, draft })
+  });
+  if (!res.ok) throw new Error(`Failed to create PR: ${await res.text()}`);
+  return res.json();
+}
+
+function makeSafeBranchName(prefix = "ai-helper") {
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const rand = Math.random().toString(36).slice(2, 7);
+  return `${prefix}/${ts}-${rand}`;
+}
+
+async function applyChangeAsPullRequest({ repoFullName, filePath, newContent, commitMessage, prTitle, prBody, draft = true }) {
+  const repoInfo = await getRepoInfo(repoFullName);
+  const baseBranch = repoInfo.default_branch || "main";
+  const baseSha = await getBranchHeadSha(repoFullName, baseBranch);
+
+  let branchName = makeSafeBranchName("ai-change");
+  try {
+    await createBranchFromSha(repoFullName, branchName, baseSha);
+  } catch (e) {
+    branchName = makeSafeBranchName("ai-change");
+    await createBranchFromSha(repoFullName, branchName, baseSha);
+  }
+
+  const commitMsg = commitMessage || `Update ${filePath} via AI Code Helper`;
+  const writeResult = await createOrUpdateFile(repoFullName, filePath, newContent, commitMsg, branchName);
+
+  const title = prTitle || `AI Code Helper: Update ${filePath}`;
+  const body = prBody || [
+    `This PR was generated by AI Code Helper.`,
+    ``,
+    `**File:** \`${filePath}\``,
+    ``,
+    `If this looks good, merge it to apply the change.`,
+  ].join("\n");
+
+  const pr = await createPullRequest(repoFullName, { title, head: branchName, base: baseBranch, body, draft });
+
+  return {
+    path: writeResult.content?.path || filePath,
+    branchName,
+    baseBranch,
+    commitSha: writeResult.commit?.sha,
+    commitUrl: writeResult.commit?.html_url,
+    prNumber: pr.number,
+    prUrl: pr.html_url,
+  };
 }
 
 function detectStack(filePaths) {
@@ -385,6 +435,13 @@ function selectFilesToAutoLoad(filePaths, stack, maxFiles = 20) {
   return selected.slice(0, maxFiles);
 }
 
+
+function approxTokens(text) {
+  // Very rough heuristic: ~4 characters per token for mixed English/code.
+  if (!text) return 0;
+  return Math.ceil(text.length / 4);
+}
+
 function parseFileRequests(response) {
   const patterns = [
     /\[READ_FILE:\s*([^\]]+)\]/gi,
@@ -402,7 +459,7 @@ function parseFileRequests(response) {
   return files;
 }
 
-function buildSystemPrompt(repoFullName, filePaths, stack, fileContents = {}, mode = "building", omittedFiles = []) {
+function buildSystemPrompt(repoFullName, filePaths, stack, fileContents = {}, mode = "building") {
   let prompt = mode === "planning" 
     ? `You are an expert software architect helping plan a new application. Ask clarifying questions, recommend tech stack, and create a project plan. When ready, output: CREATE_PROJECT:{"name":"repo-name","description":"...","stack":"...","features":[...],"pages":[...]}`
     : `You are an expert full-stack engineer with FULL ACCESS to read any file in this repository.
@@ -453,90 +510,42 @@ When modifying code, show the complete file:
 
   if (Object.keys(fileContents).length > 0) {
     prompt += "\n## Pre-loaded Files\n";
+    const budgetTokens = parseInt(process.env.CONTEXT_BUDGET_TOKENS || "140000", 10);
+    let usedTokens = approxTokens(prompt);
+    const omitted = [];
+
     for (const [fp, content] of Object.entries(fileContents)) {
       const ext = fp.split('.').pop();
-      // Intentionally NEVER truncate code/files here. If a file is too large to fit
-      // the context budget, it should be omitted entirely (handled by the caller).
-      prompt += `### ${fp}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
-    }
-  }
+      const fileTokens = approxTokens(content);
 
-  if (omittedFiles?.length) {
-    prompt += `\n## Note\nSome pre-loaded files were omitted to stay within the context budget. You can request any of them explicitly using [READ_FILE: path].\n\nOmitted: ${omittedFiles.slice(0, 50).join(', ')}${omittedFiles.length > 50 ? ` ... (+${omittedFiles.length - 50} more)` : ''}\n`;
+      // All-or-omit: never partially truncate code.
+      if (usedTokens + fileTokens > budgetTokens) {
+        omitted.push(fp);
+        continue;
+      }
+
+      prompt += `### ${fp}
+\`\`\`${ext}
+${content}
+\`\`\`
+
+`;
+      usedTokens += fileTokens;
+    }
+
+    if (omitted.length) {
+      prompt += `
+### Omitted pre-loaded files (context budget)
+` +
+        omitted.map(f => `- ${f}`).join("\n") +
+        `
+
+If you need one of these, request it explicitly using: [READ_FILE: path/to/file]
+`;
+    }
   }
 
   return prompt;
-}
-
-// --- Token / context budgeting helpers ---
-function estimateTokens(text) {
-  // Very rough heuristic: ~4 chars per token for typical English/code mix.
-  // This doesn't need to be perfect; it just needs to keep us safely under budget.
-  if (!text) return 0;
-  return Math.ceil(String(text).length / 4);
-}
-
-function estimateMessagesTokens(msgs) {
-  let total = 0;
-  for (const m of (msgs || [])) {
-    total += 12; // per-message overhead
-    total += estimateTokens(m?.content);
-  }
-  return total;
-}
-
-function trimMessagesToBudget(messages, budgetTokens) {
-  const msgs = Array.isArray(messages) ? messages : [];
-  if (budgetTokens <= 0) return msgs.slice(-1);
-
-  let total = 0;
-  const kept = [];
-  // Walk backwards keeping the most recent context.
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    const m = msgs[i];
-    const t = 12 + estimateTokens(m?.content);
-    if (kept.length > 0 && total + t > budgetTokens) break;
-    kept.unshift(m);
-    total += t;
-  }
-  return kept.length ? kept : msgs.slice(-1);
-}
-
-function selectPreloadedFilesWithinBudget(orderedPaths, allFileContents, budgetTokens) {
-  const included = {};
-  const omitted = [];
-  let used = 0;
-
-  for (const fp of (orderedPaths || [])) {
-    const content = allFileContents?.[fp];
-    if (typeof content !== 'string') continue;
-    // Account for markdown overhead added by buildSystemPrompt.
-    const overhead = 80 + fp.length;
-    const t = overhead + estimateTokens(content);
-    if (used + t > budgetTokens) {
-      omitted.push(fp);
-      continue;
-    }
-    included[fp] = content;
-    used += t;
-  }
-
-  return { included, omitted, usedTokens: used };
-}
-
-function chooseReasoningEffort({ message = '', mode = 'building', filesLoaded = 0, omittedFiles = 0 }) {
-  const text = String(message || '').toLowerCase();
-  const signals = [
-    /step\s*by\s*step/.test(text),
-    /deep\s*(analysis|reasoning)/.test(text),
-    /root\s*cause/.test(text),
-    /architecture|refactor|design|migration|system\s*prompt|security/.test(text),
-    omittedFiles > 0,
-    filesLoaded >= 8,
-    mode === 'planning'
-  ].filter(Boolean).length;
-
-  return signals >= 3 ? 'high' : 'medium';
 }
 
 async function updateStats(modelKey, inputTokens, outputTokens, cost, projectId = null) {
@@ -885,7 +894,6 @@ app.post("/api/chat", async (req, res) => {
 
     let filePaths = [], stack = "Unknown";
     let fileContents = {};
-    let orderedLoadedFiles = [];
     const repo = repoFullName || conversation.repoFullName;
     
     if (repo) {
@@ -897,7 +905,6 @@ app.post("/api/chat", async (req, res) => {
         const autoLoadList = selectFilesToAutoLoad(filePaths, stack);
         const previouslyLoaded = conversation.loadedFiles || [];
         const allToLoad = [...new Set([...autoLoadList, ...loadedFiles, ...previouslyLoaded])];
-        orderedLoadedFiles = allToLoad;
         
         res.write(`data: ${JSON.stringify({ type: "status", status: `Loading ${allToLoad.length} project files...` })}\n\n`);
         
@@ -910,91 +917,90 @@ app.post("/api/chat", async (req, res) => {
       } catch (err) { console.warn("Could not list files", err.message); }
     }
 
-    // ---- Context budgeting (Checkpoint 2/3) ----
-    const userMsg = { role: "user", content: message, timestamp: new Date().toISOString() };
+    let systemPrompt = buildSystemPrompt(repo, filePaths, stack, fileContents, mode);
+    conversation.messages.push({ role: "user", content: message, timestamp: new Date().toISOString() });
 
-    const baseSystemPrompt = buildSystemPrompt(repo, filePaths, stack, {}, mode);
+    res.write(`data: ${JSON.stringify({ type: "start", conversationId: conversation.id, model: modelConfig.displayName, modelKey, routeReason, filesLoaded: Object.keys(fileContents).length })}\n\n`);
 
-    // Budgets are intentionally high so omissions are rare.
-    // CONTEXT_BUDGET_TOKENS = max input tokens we'd like to send (rough estimate).
-    const contextBudgetTokens = Math.max(20000, parseInt(process.env.CONTEXT_BUDGET_TOKENS || process.env.CONTEXT_BUDGET || "140000", 10) || 140000);
-    const longContextBudgetTokens = Math.max(contextBudgetTokens, parseInt(process.env.LONG_CONTEXT_BUDGET_TOKENS || "500000", 10) || 500000);
-    const historyBudgetTokens = Math.max(8000, parseInt(process.env.HISTORY_BUDGET_TOKENS || String(Math.floor(contextBudgetTokens * 0.35)), 10) || Math.floor(contextBudgetTokens * 0.35));
-    const safetyMarginTokens = 2000;
+    let fullResponse = "";
+    let metadata = { inputTokens: 0, outputTokens: 0 };
 
-    const fullMessages = [...(conversation.messages || []), userMsg];
-    const trimmedMessages = trimMessagesToBudget(fullMessages, historyBudgetTokens);
-    const basePromptTokens = estimateTokens(baseSystemPrompt);
-    const historyTokens = estimateMessagesTokens(trimmedMessages);
-
-    const preloadBudget = Math.max(0, contextBudgetTokens - basePromptTokens - historyTokens - safetyMarginTokens);
-    let preloadSelection = selectPreloadedFilesWithinBudget(orderedLoadedFiles, fileContents, preloadBudget);
-
-    // Optional long-context auto-switch: only when necessary to avoid omitting preloaded files.
-    const allowLongContextAuto = !modelOverride || modelOverride === "auto";
-    const longContextModel = config.models?.longContext;
-    if (allowLongContextAuto && longContextModel?.enabled && isProviderAvailable(longContextModel.provider) && preloadSelection.omitted.length > 0) {
-      const preloadBudgetLC = Math.max(0, longContextBudgetTokens - basePromptTokens - historyTokens - safetyMarginTokens);
-      const selectionLC = selectPreloadedFilesWithinBudget(orderedLoadedFiles, fileContents, preloadBudgetLC);
-      if (selectionLC.omitted.length < preloadSelection.omitted.length) {
-        modelKey = 'longContext';
-        modelConfig = longContextModel;
-        routeReason = `${routeReason} | Long-context auto (budget)`;
-        preloadSelection = selectionLC;
-      }
-    }
-
-    const reasoningEffort = chooseReasoningEffort({ message, mode, filesLoaded: orderedLoadedFiles.length, omittedFiles: preloadSelection.omitted.length });
-
-    const systemPrompt = buildSystemPrompt(repo, filePaths, stack, preloadSelection.included, mode, preloadSelection.omitted);
-    const filesProvidedToModel = new Set(Object.keys(preloadSelection.included));
-
-    // Persist full history, even if we trim what we send to the model.
-    conversation.messages.push(userMsg);
-
-    res.write(`data: ${JSON.stringify({ type: "start", conversationId: conversation.id, model: modelConfig.displayName, modelKey, routeReason, filesLoaded: Object.keys(fileContents).length, filesIncluded: filesProvidedToModel.size, filesOmitted: preloadSelection.omitted.length, historyTrimmed: trimmedMessages.length !== fullMessages.length })}\n\n`);
-
-    let fullResponse = "", metadata = {};
-    for await (const chunk of streamCompletion(modelConfig, systemPrompt, trimmedMessages, modelConfig.maxOutputTokens, { reasoningEffort })) {
-      if (chunk.type === "text") {
-        fullResponse += chunk.text;
-        res.write(`data: ${JSON.stringify({ type: "text", text: chunk.text })}\n\n`);
-      } else if (chunk.type === "done") {
-        metadata = chunk;
-      }
-    }
-
-    // Check if AI requested additional files
-    const requestedFiles = parseFileRequests(fullResponse);
+    const maxAutoPasses = parseInt(process.env.AUTO_FILE_PASSES || "2", 10); // number of additional passes after the first
+    const maxRequestedFilesPerPass = parseInt(process.env.MAX_REQUESTED_FILES_PER_PASS || "8", 10);
     let additionalFilesLoaded = [];
-    
-    if (requestedFiles.length > 0 && repo) {
-      res.write(`data: ${JSON.stringify({ type: "status", status: `Loading ${requestedFiles.length} requested files...` })}\n\n`);
 
-      const maxEmitChars = Math.max(50000, parseInt(process.env.MAX_FILE_EMIT_CHARS || "250000", 10) || 250000);
-      
-      for (const fp of requestedFiles) {
-        if (!filesProvidedToModel.has(fp)) {
-          try {
-            const content = fileContents[fp] ?? await getFileFromGitHub(repo, fp);
-            fileContents[fp] = content;
-            additionalFilesLoaded.push(fp);
-            let blockText;
-            if (content.length > maxEmitChars) {
-              blockText = `\n\n---\n⚠️ **${fp}** is very large (${content.length.toLocaleString()} chars). I loaded it, but I am not embedding the full file to avoid freezing the UI.\nAsk for a specific section like: [READ_FILE: ${fp}#L120-L220].\n`;
-            } else {
-              blockText = `\n\n---\n📄 **${fp}:**\n\`\`\`\n${content}\n\`\`\`\n`;
-            }
-            fullResponse += blockText;
-            res.write(`data: ${JSON.stringify({ type: "text", text: blockText })}\n\n`);
-            filesProvidedToModel.add(fp);
-          } catch (err) {
-            fullResponse += `\n\n⚠️ Could not load ${fp}: ${err.message}`;
-            res.write(`data: ${JSON.stringify({ type: "text", text: `\n\n⚠️ Could not load ${fp}: ${err.message}` })}\n\n`);
-          }
+    for (let pass = 0; pass <= maxAutoPasses; pass++) {
+      let passResponse = "", passMeta = {};
+
+      for await (const chunk of streamCompletion(modelConfig, systemPrompt, conversation.messages, modelConfig.maxOutputTokens)) {
+        if (chunk.type === "text") {
+          passResponse += chunk.text;
+          res.write(`data: ${JSON.stringify({ type: "text", text: chunk.text })}
+
+`);
+        } else if (chunk.type === "done") {
+          passMeta = chunk;
         }
       }
-      conversation.loadedFiles = [...new Set([...(conversation.loadedFiles || []), ...additionalFilesLoaded])];
+
+      fullResponse += passResponse;
+
+      // Accumulate usage across passes so cost tracking remains accurate.
+      metadata.inputTokens += passMeta.inputTokens || 0;
+      metadata.outputTokens += passMeta.outputTokens || 0;
+
+      // If the assistant asked to read more files, load them and run another pass automatically.
+      const requestedFiles = parseFileRequests(passResponse).slice(0, maxRequestedFilesPerPass);
+
+      if (requestedFiles.length > 0 && repo && pass < maxAutoPasses) {
+        const toLoad = requestedFiles.filter(fp => fp && !fileContents[fp]);
+
+        if (toLoad.length) {
+          res.write(`data: ${JSON.stringify({ type: "status", status: `Loading ${toLoad.length} requested files...` })}
+
+`);
+
+          for (const fp of toLoad) {
+            try {
+              const content = await getFileFromGitHub(repo, fp);
+              fileContents[fp] = content;
+              additionalFilesLoaded.push(fp);
+
+              // Tell the user we loaded the file, but do not dump file contents into chat by default.
+              res.write(`data: ${JSON.stringify({ type: "text", text: `
+
+📥 Loaded: **${fp}**` })}
+
+`);
+              fullResponse += `
+
+📥 Loaded: **${fp}**`;
+            } catch (err) {
+              res.write(`data: ${JSON.stringify({ type: "text", text: `
+
+⚠️ Could not load ${fp}: ${err.message}` })}
+
+`);
+              fullResponse += `
+
+⚠️ Could not load ${fp}: ${err.message}`;
+            }
+          }
+
+          conversation.loadedFiles = [...new Set([...(conversation.loadedFiles || []), ...additionalFilesLoaded])];
+
+          // Rebuild system prompt so the next pass includes the newly loaded files.
+          systemPrompt = buildSystemPrompt(repo, filePaths, stack, fileContents, mode);
+
+          res.write(`data: ${JSON.stringify({ type: "status", status: "Continuing with the newly loaded files..." })}
+
+`);
+          continue;
+        }
+      }
+
+      // No file requests (or none to load) - we're done.
+      break;
     }
 
     const cost = calculateCost(modelConfig, metadata.inputTokens || 0, metadata.outputTokens || 0);
@@ -1035,12 +1041,26 @@ app.post("/api/chat", async (req, res) => {
 });
 
 app.post("/api/apply-change", async (req, res) => {
-  const { repoFullName, filePath, newContent, commitMessage } = req.body;
-  if (!repoFullName || !filePath || newContent === undefined) return res.status(400).json({ error: "repoFullName, filePath, newContent required" });
+  const { repoFullName, filePath, newContent, commitMessage, prTitle, prBody, draft } = req.body;
+  if (!repoFullName || !filePath || newContent === undefined) {
+    return res.status(400).json({ error: "repoFullName, filePath, newContent required" });
+  }
+
   try {
-    const result = await createOrUpdateFile(repoFullName, filePath, newContent, commitMessage || `Update ${filePath}`);
-    res.json({ ok: true, path: result.content?.path || filePath, commitSha: result.commit?.sha, commitUrl: result.commit?.html_url });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const result = await applyChangeAsPullRequest({
+      repoFullName,
+      filePath,
+      newContent,
+      commitMessage,
+      prTitle,
+      prBody,
+      draft: draft !== undefined ? !!draft : true
+    });
+
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.listen(PORT, "0.0.0.0", () => {

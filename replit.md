@@ -30,7 +30,7 @@ A web application that helps developers brainstorm ideas, plan code changes, edi
 - `server.js` - Express server with API endpoints for brainstorming, planning, and GitHub integration (includes model fallback logic)
 - `public/index.html` - Single-page application with all UI components
 - `pinnedProjects.json` - Configuration for pinned GitHub repositories
-- `package.json` - Project dependencies (express, openai)
+- `package.json` - Project dependencies (express, openai, node-fetch, cors)
 - `data/` - JSON storage for saved ideas and tasks
 
 ## Features
