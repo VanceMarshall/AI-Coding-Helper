@@ -1,3 +1,4 @@
+// filepath: config/config/models.json
 {
   "models": {
     "fast": {
@@ -22,7 +23,8 @@
       "outputCost": 14.0,
       "maxOutputTokens": 8192,
       "contextWindow": 200000,
-      "enabled": true
+      "enabled": true,
+      "summarizationThreshold": 50000
     },
     "fallback": {
       "id": "fallback",
@@ -46,95 +48,21 @@
       "^how to",
       "^explain",
       "^define",
-      "^why does",
-      "^can you",
-      "^is there",
-      "^where is",
-      "^when should"
+      "^why does"
     ],
     "fullPatterns": [
       "build",
       "create",
       "implement",
       "refactor",
-      "architect",
-      "design",
-      "write a",
-      "develop",
       "fix this",
       "debug",
-      "optimize",
-      "review this code",
-      "help me with this error",
-      "update the",
-      "modify",
-      "change the",
-      "new project",
-      "start a project",
-      "new app"
+      "apply change"
     ],
     "thresholds": {
       "shortMessageWords": 15,
       "longMessageWords": 50,
       "fileAttachmentTriggersFull": true
-    }
-  },
-  "providers": {
-    "openai": {
-      "name": "OpenAI",
-      "baseUrl": "https://api.openai.com/v1",
-      "envKey": "OPENAI_API_KEY"
-    },
-    "anthropic": {
-      "name": "Anthropic",
-      "baseUrl": "https://api.anthropic.com",
-      "envKey": "ANTHROPIC_API_KEY"
-    },
-    "google": {
-      "name": "Google",
-      "baseUrl": "https://generativelanguage.googleapis.com",
-      "envKey": "GOOGLE_API_KEY"
-    }
-  },
-  "templates": {
-    "nextjs": {
-      "name": "Next.js",
-      "description": "React framework with API routes, good for full-stack web apps",
-      "useCase": [
-        "web app",
-        "dashboard",
-        "saas",
-        "marketing site"
-      ]
-    },
-    "node-api": {
-      "name": "Node.js API",
-      "description": "Express backend, good for APIs and services",
-      "useCase": [
-        "api",
-        "backend",
-        "microservice",
-        "webhook"
-      ]
-    },
-    "python-flask": {
-      "name": "Python Flask",
-      "description": "Python backend, good for ML/AI integrations",
-      "useCase": [
-        "api",
-        "ml",
-        "data processing",
-        "scripts"
-      ]
-    },
-    "static": {
-      "name": "Static Site",
-      "description": "HTML/CSS/JS, good for simple sites",
-      "useCase": [
-        "landing page",
-        "portfolio",
-        "simple site"
-      ]
     }
   },
   "schemaVersion": 2
