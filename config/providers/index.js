@@ -1,4 +1,3 @@
-// filepath: config/providers/index.js
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -76,17 +75,17 @@ export async function* streamCompletion(modelConfig, systemPrompt, messages, max
   if (provider === "openai") {
     if (!openaiClient) throw new Error("OpenAI not configured");
 
+    // Prefer the Responses API when available (newer OpenAI models, including GPT-5, are happiest here).
     const inputMessages = messages.map((m) => ({
       role: m.role,
       content: typeof m.content === 'string' ? m.content : String(m.content ?? ''),
     }));
 
-    // Prefer the Responses API when available (newer OpenAI models)
     if (openaiClient.responses?.create) {
       try {
         const stream = await openaiClient.responses.create({
           model,
-          ...(systemPrompt ? { instructions: systemPrompt } : {}),
+          instructions: systemPrompt,
           input: inputMessages,
           stream: true,
           ...(maxTokens ? { max_output_tokens: maxTokens } : {}),
@@ -115,7 +114,12 @@ export async function* streamCompletion(modelConfig, systemPrompt, messages, max
           }
         }
 
-        yield { type: 'done', inputTokens, outputTokens, finishReason };
+        yield {
+          type: 'done',
+          inputTokens,
+          outputTokens,
+          finishReason,
+        };
         return;
       } catch (err) {
         console.warn('[openai] Responses API failed, falling back to chat.completions:', err?.message || err);
@@ -123,13 +127,12 @@ export async function* streamCompletion(modelConfig, systemPrompt, messages, max
     }
 
     // Fallback: Chat Completions streaming
-    // Optimization: Only add system prompt if one is explicitly passed.
-    // This allows us to handle caching by putting system messages inside the 'messages' array.
-    const openaiMessages = systemPrompt 
-      ? [{ role: 'system', content: systemPrompt }, ...inputMessages]
-      : inputMessages;
+    const openaiMessages = [
+      { role: 'system', content: systemPrompt },
+      ...inputMessages,
+    ];
 
-    const isGpt5 = typeof model === 'string' && (model.startsWith('gpt-5') || model.startsWith('o1') || model.startsWith('o3'));
+    const isGpt5 = typeof model === 'string' && model.startsWith('gpt-5');
     const stream = await openaiClient.chat.completions.create({
       model,
       messages: openaiMessages,
@@ -162,7 +165,7 @@ export async function* streamCompletion(modelConfig, systemPrompt, messages, max
     return;
   }
 
-  if (provider === "anthropic") {
+if (provider === "anthropic") {
     if (!anthropicClient) throw new Error("Anthropic not configured");
 
     const anthropicMessages = messages.map(m => ({ role: m.role, content: m.content }));
@@ -191,6 +194,8 @@ export async function* streamCompletion(modelConfig, systemPrompt, messages, max
     if (!googleApiKey) throw new Error("Google not configured");
 
     const contents = [];
+    
+    // Add system prompt as first user message context
     contents.push({
       role: "user",
       parts: [{ text: `System Instructions: ${systemPrompt}\n\nNow, please respond to the conversation below:` }]
@@ -200,6 +205,7 @@ export async function* streamCompletion(modelConfig, systemPrompt, messages, max
       parts: [{ text: "I understand. I'll follow those instructions for our conversation." }]
     });
 
+    // Add conversation messages
     for (const m of messages) {
       contents.push({
         role: m.role === "assistant" ? "model" : "user",
