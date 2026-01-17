@@ -24,6 +24,9 @@ const CONFIG_PATH = path.join(DATA_DIR, "models.json");
 const SECRETS_PATH = path.join(DATA_DIR, "secrets.json");
 const conversationsPath = path.join(DATA_DIR, "conversations.json");
 
+// Bundled defaults (read-only at runtime)
+const DEFAULTS_PATH = path.join(__dirname, "config", "models.json");
+
 const projectsPath = path.join(DATA_DIR, "projects.json");
 
 // NEW: cache for repo file lists (paths only)
@@ -52,7 +55,7 @@ async function writeJson(filePath, value) {
 }
 
 async function loadConfig() {
-  const defaults = await readJson(path.join(__dirname, "config", "models.json"), {});
+  const defaults = await readJson(DEFAULTS_PATH, {});
   const runtime = await readJson(CONFIG_PATH, {});
   return { ...defaults, ...runtime };
 }
@@ -185,6 +188,36 @@ ${textToSummarize}`;
 
 app.get("/api/projects", async (req, res) => {
   res.json(await readJson(projectsPath, []));
+});
+
+// Required by the frontend (and admin UI): returns the active runtime config
+// plus a small _meta block with paths for debugging.
+app.get("/api/config", async (req, res) => {
+  try {
+    const config = await loadConfig();
+
+    // Provider availability is derived from initialized clients/env.
+    // Do NOT include any secret values in this response.
+    const providers = {
+      openai: isProviderAvailable("openai"),
+      anthropic: isProviderAvailable("anthropic"),
+      google: isProviderAvailable("google"),
+      // GitHub is considered available if a token exists (env or secrets).
+      github: !!(await getApiKeyWithFallback("github")).key,
+    };
+
+    res.json({
+      ...config,
+      providers,
+      _meta: {
+        configPath: CONFIG_PATH,
+        defaultConfigPath: DEFAULTS_PATH,
+      },
+    });
+  } catch (e) {
+    console.error("GET /api/config error:", e);
+    res.status(500).json({ error: e.message || "Failed to load config" });
+  }
 });
 
 // NEW: endpoint required by frontend

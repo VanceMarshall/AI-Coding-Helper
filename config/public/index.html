@@ -128,7 +128,16 @@ const state={conversationId:null,conversations:[],loadedFiles:[],repoFiles:[],se
 const $=id=>document.getElementById(id);
 function showToast(m){const e=$('toast');e.textContent=m;e.style.display='block';setTimeout(()=>e.style.display='none',3000)}
 
-async function loadConfig(){state.config=await(await fetch('/api/config')).json()}
+async function loadConfig(){
+  try{
+    const resp=await fetch('/api/config');
+    if(!resp.ok) throw new Error(`Server returned ${resp.status}`);
+    state.config=await resp.json();
+  }catch(e){
+    console.warn('Failed to load /api/config:',e);
+    state.config=null;
+  }
+}
 async function loadProjects(){try{const r=await(await fetch('/api/projects')).json();$('projectSelect').innerHTML='<option value="">No project</option>'+r.map(x=>`<option value="${x.fullName}">${x.fullName}</option>`).join('')}catch(e){}}
 async function loadConversations(){state.conversations=await(await fetch('/api/conversations')).json();renderConversations()}
 
