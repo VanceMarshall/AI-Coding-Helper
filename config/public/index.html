@@ -148,6 +148,8 @@ async function loadConfig(){
     const resp=await fetch('/api/config');
     if(!resp.ok) throw new Error(`Server returned ${resp.status}`);
     state.config=await resp.json();
+    // Update header indicator with loaded model names
+    try{setModelIndicatorIdle();}catch(e){}
   }catch(e){
     console.warn('Failed to load /api/config:',e);
     state.config=null;
@@ -384,31 +386,98 @@ $('fileSearch').oninput=e=>renderFileTree(e.target.value);
 $('closeFileModal').onclick=()=>$('fileModal').classList.remove('active');
 $('confirmFiles').onclick=()=>{state.loadedFiles=Array.from(state.selectedFiles);$('fileModal').classList.remove('active')};
 
+// Model mode toggle (Auto/Fast/Full)
+function modeLabel(mode){
+  const m = String(mode||'auto').toLowerCase();
+  if(m==='fast') return 'Fast';
+  if(m==='full') return 'Full';
+  return 'Auto';
+}
+
+function selectedModelNameForMode(){
+  const m = String(state.mode||'auto').toLowerCase();
+  const cfg = state.config && state.config.models ? state.config.models : null;
+  if(!cfg) return modeLabel(m);
+  if(m==='fast' && cfg.fast && cfg.fast.displayName) return 'Fast: ' + cfg.fast.displayName;
+  if(m==='full' && cfg.full && cfg.full.displayName) return 'Full: ' + cfg.full.displayName;
+  if(m==='auto') return 'Auto (smart routing)';
+  return modeLabel(m);
+}
+
+function setModelIndicatorIdle(){
+  const el = $('modelIndicator');
+  if(!el) return;
+  const dotHtml = '<span class="dot"></span>';
+  el.innerHTML = dotHtml + selectedModelNameForMode();
+  const dot = el.querySelector('.dot');
+  if(dot){
+    const m = String(state.mode||'auto').toLowerCase();
+    if(m==='fast') dot.style.background = 'var(--green)';
+    else if(m==='full') dot.style.background = 'var(--accent)';
+    else dot.style.background = 'var(--yellow)';
+  }
+}
+
+function initModelToggle(){
+  const wrap = $('modelToggle');
+  if(!wrap) return;
+  wrap.querySelectorAll('button[data-mode]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const mode = btn.dataset.mode || 'auto';
+      state.mode = mode;
+      wrap.querySelectorAll('button[data-mode]').forEach(b=>b.classList.toggle('active', b===btn));
+      setModelIndicatorIdle();
+    };
+  });
+  setModelIndicatorIdle();
+}
+
+
 async function sendMessage(){
   const m=$('messageInput').value.trim();if(!m||state.streaming)return;
   state.streaming=true;$('sendBtn').disabled=true;
   appendMessage('user',m);$('messageInput').value='';
   const aMsg=appendMessage('assistant','');const cel=aMsg.querySelector('.msg-content');cel.innerHTML='<span class="streaming-dot"></span>';
+
+  const selectedMode = String(state.mode||'auto').toLowerCase();
   try{
-    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversationId:state.conversationId,message:m,repoFullName:$('projectSelect').value,loadedFiles:state.loadedFiles,modelOverride:state.mode})});
+    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversationId:state.conversationId,message:m,repoFullName:$('projectSelect').value,loadedFiles:state.loadedFiles,modelOverride:selectedMode})});
+
+    if(!res.ok){
+      const t = await res.text().catch(()=> '');
+      throw new Error(`Server returned ${res.status}${t?': '+t:''}`);
+    }
+
     const reader=res.body.getReader();const dec=new TextDecoder();let full='';
     while(true){const{done,value}=await reader.read();if(done)break;
       for(const line of dec.decode(value).split('\n')){if(!line.startsWith('data: '))continue;
         try{const d=JSON.parse(line.slice(6));
-          if(d.type==='start'){state.conversationId=d.conversationId;$('modelIndicator').innerHTML=`<span class="dot"></span>${d.model}`}
+          if(d.type==='start'){
+            state.conversationId=d.conversationId;
+            const label = (selectedMode==='auto'?'Auto':(selectedMode==='fast'?'Fast':'Full'));
+            $('modelIndicator').innerHTML=`<span class="dot"></span>${label} → ${d.model}`;
+          }
           else if(d.type==='text'){full+=d.text;cel.innerHTML=marked.parse(full);$('messages').scrollTop=$('messages').scrollHeight}
+          else if(d.type==='error'){showToast(d.error||'Chat error');}
           else if(d.type==='done'){loadConversations()}
-        }catch(e){}}
+        }catch(e){} }
     }
 
     // Final render pass adds collapsible code blocks + Copy/Create PR buttons
     if(full) renderMarkdownInto(cel, full);
-  }catch(e){cel.innerHTML='Error sending message'}
-  finally{state.streaming=false;$('sendBtn').disabled=false}
+  }catch(e){
+    console.error('Send error:', e);
+    cel.innerHTML='Error: '+escapeHtml(e.message||'Unable to send message');
+  }
+  finally{
+    state.streaming=false;$('sendBtn').disabled=false;
+    setModelIndicatorIdle();
+  }
 }
 
 $('sendBtn').onclick=sendMessage;
 $('newChatBtn').onclick=()=>{state.conversationId=null;state.loadedFiles=[];renderMessages([]);$('chatTitle').textContent='New Chat'};
+initModelToggle();
 loadConfig();loadProjects();loadConversations();
 </script>
 </body>

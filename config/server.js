@@ -468,8 +468,30 @@ app.post("/api/chat", async (req, res) => {
 
     // Smart Routing
     const route = routeMessage(message, config, loadedFiles.length > 0);
-    const modelKey = modelOverride || route.modelKey;
-    const modelConfig = config.models[modelKey];
+
+    // modelOverride comes from the UI toggle (auto/fast/full).
+    // Treat 'auto' as no override and route safely.
+    const normalizedOverride =
+      typeof modelOverride === "string" ? modelOverride.trim().toLowerCase() : "";
+    const overrideKey =
+      normalizedOverride && normalizedOverride !== "auto" ? normalizedOverride : null;
+
+    let modelKey = overrideKey || route.modelKey || "full";
+    let modelConfig = config.models?.[modelKey];
+
+    // Safety: if an invalid override is provided, fall back deterministically.
+    if (!modelConfig) {
+      const fallbackKey =
+        (route.modelKey && config.models?.[route.modelKey] && route.modelKey) ||
+        (config.models?.full && "full") ||
+        Object.keys(config.models || {})[0];
+      modelKey = fallbackKey;
+      modelConfig = config.models?.[modelKey];
+    }
+
+    if (!modelConfig) {
+      throw new Error("No models are configured. Check /app/data/models.json and defaults.");
+    }
 
     // IMPORTANT: fileContents must only include explicitly selected files.
     // Your repo file LIST is separate and should never be injected into prompts.
