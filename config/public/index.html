@@ -1,21 +1,13 @@
+// filepath: config/public/index.html
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
   <title>AI Code Helper</title>
-
-  <!-- Stop favicon 404 -->
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
-
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
-
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-
   <style>
     :root{--bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--bg4:#30363d;--border:#30363d;--text:#e6edf3;--text2:#8b949e;--text3:#6e7681;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;--purple:#a371f7;--sans:'Plus Jakarta Sans',sans-serif;--mono:'JetBrains Mono',monospace}
     *{box-sizing:border-box;margin:0;padding:0}html,body{height:100%;overflow:hidden}
@@ -25,12 +17,14 @@
     .sidebar-header{padding:16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
     .sidebar-header h1{font-size:18px;display:flex;align-items:center;gap:8px}
     .sidebar-header h1 span{background:linear-gradient(135deg,var(--accent),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+    .close-sidebar{display:none;background:none;border:none;color:var(--text2);font-size:24px;cursor:pointer;padding:4px}
     .project-select{padding:12px 16px;border-bottom:1px solid var(--border)}
     .project-select label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text2);margin-bottom:6px}
     .project-select select{width:100%;padding:10px 12px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--sans);font-size:14px}
     .sidebar-actions{padding:12px 16px;display:flex;flex-direction:column;gap:8px}
     .action-btn{padding:12px 16px;border:none;border-radius:8px;font-family:var(--sans);font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
     .action-btn.primary{background:var(--accent);color:var(--bg)}
+    .action-btn.secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border)}
     .conversations{flex:1;overflow-y:auto;padding:8px}
     .conv-item{padding:12px;border-radius:8px;cursor:pointer;margin-bottom:4px;display:flex;align-items:center;gap:8px;font-size:14px}
     .conv-item:hover{background:var(--bg4)}.conv-item.active{background:var(--bg3)}
@@ -39,11 +33,13 @@
     .sidebar-footer a{color:var(--text2);text-decoration:none;font-size:13px;display:flex;align-items:center;gap:6px;padding:8px 0}
     .main{flex:1;display:flex;flex-direction:column;min-width:0}
     .chat-header{padding:12px 16px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:12px}
+    .menu-btn{display:none;background:none;border:none;color:var(--text);font-size:20px;cursor:pointer;padding:4px}
     .chat-title{font-size:15px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .model-indicator{font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px;flex-shrink:0}
     .model-indicator .dot{width:6px;height:6px;border-radius:50%;background:var(--green)}
     .messages{flex:1;overflow-y:auto;padding:16px}.messages-inner{max-width:800px;margin:0 auto}
-    .message{margin-bottom:20px}
+    .message{margin-bottom:20px;animation:fadeIn .3s}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1}}
     .msg-header{display:flex;align-items:center;gap:10px;margin-bottom:8px}
     .msg-avatar{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
     .message.user .msg-avatar{background:var(--accent);color:var(--bg)}
@@ -53,13 +49,9 @@
     .msg-content pre{margin:12px 0;border-radius:8px;overflow:hidden}
     .msg-content pre code{display:block;padding:12px;background:var(--bg3);overflow-x:auto;font-size:13px}
     .msg-content code{font-family:var(--mono);background:var(--bg3);padding:2px 6px;border-radius:4px;font-size:13px}
-
-    .file-collapse{border:1px solid var(--border);border-radius:8px;margin:12px 0;background:var(--bg2);overflow:hidden}
-    .file-collapse summary{padding:10px 14px;background:var(--bg3);cursor:pointer;user-select:none;font-family:var(--mono);font-size:13px;display:flex;align-items:center;gap:8px}
-    .file-collapse summary:hover{background:var(--bg4)}
-    .file-collapse pre{margin:0;border:none;border-radius:0}
-    .file-collapse pre code{padding:15px;background:transparent}
-
+    .code-header{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg4);font-size:12px;color:var(--text2);flex-wrap:wrap;gap:8px}
+    .code-header button{background:none;border:1px solid var(--border);color:var(--text2);cursor:pointer;font-size:11px;padding:6px 10px;border-radius:4px}
+    .code-header button:hover{background:var(--bg3);color:var(--text)}
     .input-area{padding:12px 16px;border-top:1px solid var(--border);background:var(--bg2)}
     .input-inner{max-width:800px;margin:0 auto}
     .model-toggle{display:flex;gap:4px;margin-bottom:10px;background:var(--bg3);padding:4px;border-radius:8px;width:fit-content}
@@ -69,7 +61,6 @@
     .input-box textarea{width:100%;padding:14px 16px;padding-right:90px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;color:var(--text);font-family:var(--sans);font-size:15px;resize:none;min-height:52px;max-height:150px}
     .input-actions{position:absolute;right:8px;bottom:8px;display:flex;gap:6px}
     .input-actions button{padding:10px 16px;background:var(--accent);border:none;border-radius:6px;color:var(--bg);font-weight:600;cursor:pointer;font-size:14px}
-    .input-actions button:disabled{opacity:.5;cursor:not-allowed}
     .input-actions button.attach{background:transparent;color:var(--text2);padding:10px}
     .modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px}
     .modal.active{display:flex}
@@ -89,36 +80,29 @@
   <div class="toast" id="toast"></div>
   <div class="app">
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-header"><h1>AI Code Helper</h1></div>
-      <div class="project-select">
-        <label>Project</label>
-        <select id="projectSelect"><option value="">No project</option></select>
-      </div>
+      <div class="sidebar-header"><h1>⚡ <span>AI Code Helper</span></h1></div>
+      <div class="project-select"><label>Project</label><select id="projectSelect"><option value="">No project</option></select></div>
       <div class="sidebar-actions">
-        <button class="action-btn primary" id="newChatBtn">New Chat</button>
+        <button class="action-btn primary" id="newChatBtn">💬 New Chat</button>
       </div>
       <div class="conversations" id="conversations"></div>
-      <div class="sidebar-footer"><a href="/admin">Admin</a></div>
+      <div class="sidebar-footer"><a href="/admin">⚙️ Admin</a></div>
     </aside>
-
     <main class="main">
       <header class="chat-header">
+        <button class="menu-btn" id="menuBtn">☰</button>
         <span class="chat-title" id="chatTitle">New conversation</span>
         <span class="model-indicator" id="modelIndicator"><span class="dot"></span>Ready</span>
       </header>
-
-      <div class="messages" id="messages">
-        <div class="messages-inner" id="messagesInner"></div>
-      </div>
-
+      <div class="messages" id="messages"><div class="messages-inner" id="messagesInner"></div></div>
       <div class="input-area">
         <div class="input-inner">
           <div class="model-toggle" id="modelToggle">
-            <button class="active" data-mode="auto">Auto</button>
-            <button data-mode="fast">Fast</button>
-            <button data-mode="full">Full</button>
+            <button class="active" data-mode="auto">🔀 Auto</button>
+            <button data-mode="fast">⚡ Fast</button>
+            <button data-mode="full">🔥 Full</button>
           </div>
-
+          <div class="file-chips" id="fileChips"></div>
           <div class="input-box">
             <textarea id="messageInput" placeholder="Describe what you want to build..." rows="1"></textarea>
             <div class="input-actions">
@@ -130,130 +114,35 @@
       </div>
     </main>
   </div>
-
   <div class="modal" id="fileModal">
     <div class="modal-content">
-      <div class="modal-header">
-        <h3>Add files</h3>
-        <button class="modal-close" id="closeFileModal">×</button>
-      </div>
-      <div class="modal-body">
-        <input type="text" class="file-search" id="fileSearch" placeholder="Search...">
-        <div class="file-tree" id="fileTree"></div>
-      </div>
-      <div class="modal-footer">
-        <button id="confirmFiles">Add Selected</button>
-      </div>
+      <div class="modal-header"><h3>📁 Add files</h3><button class="modal-close" id="closeFileModal">×</button></div>
+      <div class="modal-body"><input type="text" class="file-search" id="fileSearch" placeholder="Search..."><div class="file-tree" id="fileTree"></div></div>
+      <div class="modal-footer"><button id="confirmFiles">Add Selected</button></div>
     </div>
   </div>
 
 <script>
-const renderer = new marked.Renderer();
-renderer.code = (code, language) => {
-  const filenameMatch = code.match(/(\/\/\s*filepath:\s*|---\s*FILE:\s*|File:\s*)([^\n]+)/i);
-  const filename = filenameMatch ? filenameMatch[2].trim() : (language || 'code');
-  const isLong = code.split('\n').length > 10 || !!filenameMatch;
-
-  let highlighted;
-  try {
-    highlighted = language ? hljs.highlight(code, {language}).value : hljs.highlightAuto(code).value;
-  } catch {
-    highlighted = code;
-  }
-
-  if (isLong) {
-    return `
-      <details class="file-collapse">
-        <summary>📄 ${escapeHtml(filename)}</summary>
-        <pre><code class="hljs ${escapeHtml(language || '')}">${highlighted}</code></pre>
-      </details>
-    `;
-  }
-  return `<pre><code class="hljs ${escapeHtml(language || '')}">${highlighted}</code></pre>`;
-};
-
-marked.setOptions({ renderer, breaks: true, gfm: true });
-
-function safeMarkdown(content) {
-  const raw = marked.parse(content || '');
-  return DOMPurify.sanitize(raw, {
-    ADD_TAGS: ['details','summary'],
-    FORBID_TAGS: ['style','link','iframe','script'],
-    FORBID_ATTR: ['onerror','onload']
-  });
-}
-
-function escapeHtml(s){
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-const state={
-  conversationId:null,
-  conversations:[],
-  loadedFiles:[],
-  repoFiles:[],
-  selectedFiles:new Set(),
-  mode:'auto',
-  streaming:false,
-};
-
+marked.setOptions({highlight:(c,l)=>l&&hljs.getLanguage(l)?hljs.highlight(c,{language:l}).value:hljs.highlightAuto(c).value,breaks:true});
+const state={conversationId:null,conversations:[],loadedFiles:[],repoFiles:[],selectedFiles:new Set(),config:null,mode:'auto',streaming:false};
 const $=id=>document.getElementById(id);
+function showToast(m){const e=$('toast');e.textContent=m;e.style.display='block';setTimeout(()=>e.style.display='none',3000)}
 
-function setIndicator(text, color){
-  const el = $('modelIndicator');
-  el.innerHTML = `<span class="dot" style="background:${color || 'var(--green)'}"></span>${text}`;
-}
-
-function showToast(m){
-  const e=$('toast');
-  e.textContent=m;
-  e.style.display='block';
-  setTimeout(()=>e.style.display='none',3000);
-}
-
-async function loadProjects(){
-  try{
-    const r=await(await fetch('/api/projects')).json();
-    $('projectSelect').innerHTML='<option value="">No project</option>'+
-      r.map(x=>`<option value="${x.fullName}">${x.fullName}</option>`).join('');
-  }catch(e){
-    console.error(e);
-  }
-}
-
-async function loadConversations(){
-  state.conversations=await(await fetch('/api/conversations')).json();
-  renderConversations();
-}
+async function loadConfig(){state.config=await(await fetch('/api/config')).json()}
+async function loadProjects(){try{const r=await(await fetch('/api/projects')).json();$('projectSelect').innerHTML='<option value="">No project</option>'+r.map(x=>`<option value="${x.fullName}">${x.fullName}</option>`).join('')}catch(e){}}
+async function loadConversations(){state.conversations=await(await fetch('/api/conversations')).json();renderConversations()}
 
 function renderConversations(){
-  $('conversations').innerHTML = state.conversations
-    .sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0))
-    .map(c=>
-      `<div class="conv-item${c.id===state.conversationId?' active':''}" data-id="${c.id}">
-        <span class="title">${c.title||'Chat'}</span>
-      </div>`
-    ).join('');
-
-  $('conversations').querySelectorAll('.conv-item').forEach(el=>{
-    el.onclick=()=>loadConversation(el.dataset.id);
-  });
+  $('conversations').innerHTML=state.conversations.map(c=>`<div class="conv-item${c.id===state.conversationId?' active':''}" data-id="${c.id}"><span class="title">${c.title||'Chat'}</span></div>`).join('');
+  $('conversations').querySelectorAll('.conv-item').forEach(el=>el.onclick=()=>loadConversation(el.dataset.id));
 }
 
 async function loadConversation(id){
-  const c=state.conversations.find(x=>x.id===id);
-  if(!c) return;
-
+  const c=state.conversations.find(x=>x.id===id);if(!c)return;
   state.conversationId=id;
   $('chatTitle').textContent=c.title||'Conversation';
-
-  if(c.repoFullName){
-    $('projectSelect').value=c.repoFullName;
-    await loadRepoFiles();
-  }
-
-  renderMessages(c.messages || []);
-  renderConversations();
+  if(c.repoFullName){$('projectSelect').value=c.repoFullName;await loadRepoFiles()}
+  renderMessages(c.messages);renderConversations();
 }
 
 function renderMessages(msgs){
@@ -263,28 +152,14 @@ function renderMessages(msgs){
 }
 
 function appendMessage(role,content,model='',animate=true){
-  const msg=document.createElement('div');
-  msg.className=`message ${role}`;
-  msg.innerHTML=`
-    <div class="msg-header">
-      <div class="msg-avatar">${role==='user'?'Y':'AI'}</div>
-      <span class="msg-author">${role==='user'?'You':'Assistant'}</span>
-      <span class="msg-meta">${model||''}</span>
-    </div>
-    <div class="msg-content"></div>
-  `;
+  const msg=document.createElement('div');msg.className=`message ${role}`;
+  msg.innerHTML=`<div class="msg-header"><div class="msg-avatar">${role==='user'?'Y':'AI'}</div><span class="msg-author">${role==='user'?'You':'Assistant'}</span><span class="msg-meta">${model}</span></div><div class="msg-content"></div>`;
   const cel=msg.querySelector('.msg-content');
-  if(role==='assistant'){
-    cel.innerHTML = safeMarkdown(content||'');
-    // collapse all file blocks by default when re-rendering history
-    cel.querySelectorAll('details.file-collapse').forEach(d=>d.removeAttribute('open'));
-  } else {
-    cel.textContent = content || '';
-  }
-  $('messagesInner').appendChild(msg);
-  return msg;
+  if(role==='assistant'){cel.innerHTML=marked.parse(content)}else{cel.innerHTML=`<p>${content}</p>`}
+  $('messagesInner').appendChild(msg);return msg;
 }
 
+// FIXED: Handles the new backend contract and reports errors
 async function loadRepoFiles(){
   const r=$('projectSelect').value;
   if(!r){state.repoFiles=[];return}
@@ -294,6 +169,7 @@ async function loadRepoFiles(){
     if(!resp.ok) throw new Error(`Server returned ${resp.status}`);
     const d=await resp.json();
     state.repoFiles=d.files||[];
+    console.log(`Loaded ${state.repoFiles.length} files from ${r}`);
   } catch(e) {
     console.error("Failed to load repo files:", e);
     showToast("Error loading file list");
@@ -302,143 +178,45 @@ async function loadRepoFiles(){
 }
 
 $('projectSelect').onchange=loadRepoFiles;
-
-$('attachBtn').onclick=()=>{
-  if(!$('projectSelect').value){showToast('Select project first');return}
-  renderFileTree();
-  $('fileModal').classList.add('active');
-};
+$('attachBtn').onclick=()=>{if(!$('projectSelect').value){showToast('Select project first');return}renderFileTree();$('fileModal').classList.add('active')};
 
 function renderFileTree(f=''){
   const fl=state.repoFiles.filter(x=>x.toLowerCase().includes(f.toLowerCase()));
-  $('fileTree').innerHTML=fl.slice(0,200).map(x=>
-    `<div class="file-item${state.selectedFiles.has(x)?' selected':''}" data-path="${escapeHtml(x)}">📄 ${escapeHtml(x)}</div>`
-  ).join('');
-
+  $('fileTree').innerHTML=fl.slice(0,100).map(x=>`<div class="file-item${state.selectedFiles.has(x)?' selected':''}" data-path="${x}">📄 ${x}</div>`).join('');
   $('fileTree').querySelectorAll('.file-item').forEach(e=>e.onclick=()=>{
     const p=e.dataset.path;
-    if(state.selectedFiles.has(p)){
-      state.selectedFiles.delete(p); e.classList.remove('selected');
-    } else {
-      state.selectedFiles.add(p); e.classList.add('selected');
-    }
+    if(state.selectedFiles.has(p)){state.selectedFiles.delete(p);e.classList.remove('selected')}
+    else{state.selectedFiles.add(p);e.classList.add('selected')}
   });
 }
 
 $('fileSearch').oninput=e=>renderFileTree(e.target.value);
 $('closeFileModal').onclick=()=>$('fileModal').classList.remove('active');
-$('confirmFiles').onclick=()=>{
-  state.loadedFiles=Array.from(state.selectedFiles);
-  $('fileModal').classList.remove('active');
-  showToast(`Selected ${state.loadedFiles.length} file(s)`);
-};
-
-document.querySelectorAll('#modelToggle button').forEach(btn=>{
-  btn.onclick=()=>{
-    document.querySelectorAll('#modelToggle button').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-    state.mode = btn.dataset.mode;
-    showToast(`Mode: ${state.mode}`);
-  };
-});
+$('confirmFiles').onclick=()=>{state.loadedFiles=Array.from(state.selectedFiles);$('fileModal').classList.remove('active')};
 
 async function sendMessage(){
-  const m=$('messageInput').value.trim();
-  if(!m||state.streaming) return;
-
-  state.streaming=true;
-  $('sendBtn').disabled=true;
-  setIndicator('Sending…', 'var(--yellow)');
-
-  appendMessage('user',m);
-  $('messageInput').value='';
-
-  const aMsg=appendMessage('assistant','');
-  const cel=aMsg.querySelector('.msg-content');
-  cel.innerHTML='<span class="streaming-dot"></span>';
-
+  const m=$('messageInput').value.trim();if(!m||state.streaming)return;
+  state.streaming=true;$('sendBtn').disabled=true;
+  appendMessage('user',m);$('messageInput').value='';
+  const aMsg=appendMessage('assistant','');const cel=aMsg.querySelector('.msg-content');cel.innerHTML='<span class="streaming-dot"></span>';
   try{
-    const res=await fetch('/api/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        conversationId:state.conversationId,
-        message:m,
-        repoFullName:$('projectSelect').value,
-        loadedFiles:state.loadedFiles,
-        modelOverride:state.mode
-      })
-    });
-
-    if(!res.ok){
-      const t = await res.text().catch(()=> '');
-      throw new Error(`Chat failed: ${res.status} ${t}`);
+    const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({conversationId:state.conversationId,message:m,repoFullName:$('projectSelect').value,loadedFiles:state.loadedFiles,modelOverride:state.mode})});
+    const reader=res.body.getReader();const dec=new TextDecoder();let full='';
+    while(true){const{done,value}=await reader.read();if(done)break;
+      for(const line of dec.decode(value).split('\n')){if(!line.startsWith('data: '))continue;
+        try{const d=JSON.parse(line.slice(6));
+          if(d.type==='start'){state.conversationId=d.conversationId;$('modelIndicator').innerHTML=`<span class="dot"></span>${d.model}`}
+          else if(d.type==='text'){full+=d.text;cel.innerHTML=marked.parse(full);$('messages').scrollTop=$('messages').scrollHeight}
+          else if(d.type==='done'){loadConversations()}
+        }catch(e){}}
     }
-
-    const reader=res.body.getReader();
-    const dec=new TextDecoder();
-
-    let sseBuffer = '';
-    let full='';
-
-    while(true){
-      const {done,value}=await reader.read();
-      if(done) break;
-
-      sseBuffer += dec.decode(value, {stream:true});
-      const lines = sseBuffer.split('\n');
-      sseBuffer = lines.pop() || '';
-
-      for(const line of lines){
-        if(!line.startsWith('data: ')) continue;
-        const payload = line.slice(6).trim();
-        if(!payload) continue;
-
-        try{
-          const d=JSON.parse(payload);
-
-          if(d.type==='start'){
-            state.conversationId=d.conversationId;
-            setIndicator(`Model: ${d.model}`, 'var(--green)');
-          } else if(d.type==='text'){
-            full+=d.text;
-            cel.innerHTML = safeMarkdown(full);
-            $('messages').scrollTop=$('messages').scrollHeight;
-          } else if(d.type==='done'){
-            const cost = (typeof d.cost === 'number') ? `$${d.cost.toFixed(4)}` : '';
-            const toks = (d.inputTokens!=null && d.outputTokens!=null) ? `in:${d.inputTokens} out:${d.outputTokens}` : '';
-            const cached = (d.cachedTokens!=null) ? ` cached:${d.cachedTokens}` : '';
-            setIndicator(`Done ${cost} ${toks}${cached}`.trim(), 'var(--green)');
-            loadConversations();
-          } else if(d.type==='error'){
-            setIndicator(`Error: ${d.error}`, 'var(--red)');
-          }
-        }catch{}
-      }
-    }
-  }catch(e){
-    console.error(e);
-    cel.innerHTML='Error sending message';
-    setIndicator('Error', 'var(--red)');
-  }finally{
-    state.streaming=false;
-    $('sendBtn').disabled=false;
-  }
+  }catch(e){cel.innerHTML='Error sending message'}
+  finally{state.streaming=false;$('sendBtn').disabled=false}
 }
 
 $('sendBtn').onclick=sendMessage;
-
-$('newChatBtn').onclick=()=>{
-  state.conversationId=null;
-  state.loadedFiles=[];
-  state.selectedFiles.clear();
-  $('chatTitle').textContent='New Chat';
-  $('messagesInner').innerHTML='';
-  setIndicator('Ready', 'var(--green)');
-};
-
-loadProjects();
-loadConversations();
+$('newChatBtn').onclick=()=>{state.conversationId=null;state.loadedFiles=[];renderMessages([]);$('chatTitle').textContent='New Chat'};
+loadConfig();loadProjects();loadConversations();
 </script>
 </body>
 </html>

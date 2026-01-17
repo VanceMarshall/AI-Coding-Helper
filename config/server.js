@@ -3,44 +3,51 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs/promises";
-
-import { initializeProviders, streamCompletion, calculateCost } from "./providers/index.js";
-import { routeMessage } from "./providers/router.js";
+import crypto from "crypto";
+import {
+  initializeProviders,
+  isProviderAvailable,
+  streamCompletion,
+  calculateCost,
+  reloadProviders,
+} from "./providers/index.js";
+import { routeMessage, previewRoute } from "./providers/router.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 8080;
-
-// Railway persistent volume is mounted at /app per your deployment summary.
-// Your repo lives under /app/config for code, and we persist runtime data under /app/data.
 const ROOT_DIR = path.resolve(__dirname, "..");
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT_DIR, "data");
-
-// Runtime JSON state
 const CONFIG_PATH = path.join(DATA_DIR, "models.json");
-const CONVERSATIONS_PATH = path.join(DATA_DIR, "conversations.json");
-const PROJECTS_PATH = path.join(DATA_DIR, "projects.json");
+const SECRETS_PATH = path.join(DATA_DIR, "secrets.json");
+const conversationsPath = path.join(DATA_DIR, "conversations.json");
 
-// Safety limits to prevent runaway context costs
-const MAX_FILES = Number(process.env.MAX_FILES || 15);
-const MAX_FILE_CHARS = Number(process.env.MAX_FILE_CHARS || 120_000); // ~120k chars/file cap in prompt
+const projectsPath = path.join(DATA_DIR, "projects.json");
+
+// NEW: pinned projects defaults (bundled) + GitHub projects cache
+const pinnedProjectsPath = path.join(ROOT_DIR, "pinnedProjects.json");
+const projectsCachePath = path.join(DATA_DIR, "projectsCache.json");
+const PROJECTS_TTL_MS = 1000 * 60 * 10; // 10 minutes
+
+// NEW: cache for repo file lists (paths only)
+const repoFileCachePath = path.join(DATA_DIR, "repoFileCache.json");
+const REPO_FILES_TTL_MS = 1000 * 60 * 30; // 30 minutes
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
-// Initialize providers from env
-initializeProviders();
+// Initialize
+let providerStatus = initializeProviders();
 
-/* -------------------- Utilities -------------------- */
+/* ----------------------- basic json helpers ----------------------- */
 
-async function readJson(filePath, fallback) {
+async function readJson(filePath, defaultValue) {
   try {
-    const raw = await fs.readFile(filePath, "utf8");
-    return JSON.parse(raw);
+    return JSON.parse(await fs.readFile(filePath, "utf8"));
   } catch {
-    return fallback;
+    return defaultValue;
   }
 }
 
@@ -50,227 +57,388 @@ async function writeJson(filePath, value) {
 }
 
 async function loadConfig() {
-  // Defaults baked into repo
-  const defaultConfigPath = path.join(__dirname, "config", "models.json");
-  const defaults = await readJson(defaultConfigPath, {});
-  // Runtime overrides on the persistent volume
+  const defaults = await readJson(path.join(__dirname, "config", "models.json"), {});
   const runtime = await readJson(CONFIG_PATH, {});
-  // Shallow merge is fine for this config structure
   return { ...defaults, ...runtime };
 }
 
-/**
- * Prompt caching strategy:
- * - Put the MOST STABLE prefix first: system instructions + repo/file context (sorted)
- * - Append dynamic conversation last
- *
- * NOTE: We pack system messages ourselves, so provider streaming should receive `systemPrompt = null`.
- */
-function prepareMessagesForModel(conversationMessages, options = {}) {
+/* ----------------------- github helpers ----------------------- */
+
+async function loadSecrets() {
+  return await readJson(SECRETS_PATH, { apiKeys: {} });
+}
+
+async function getApiKeyWithFallback(provider) {
+  // env first
+  const envKeyName =
+    provider === "github" ? "GITHUB_TOKEN" : `${provider.toUpperCase()}_API_KEY`;
+  const envKey = process.env[envKeyName];
+  if (envKey) return { key: envKey, source: "env" };
+
+  // secrets.json next
+  const secrets = await loadSecrets();
+  const key = secrets?.apiKeys?.[provider];
+  return { key, source: "secrets" };
+}
+
+async function githubFetchJson(url) {
+  const { key: token } = await getApiKeyWithFallback("github");
+  if (!token) throw new Error("GITHUB_TOKEN not configured");
+
+  const resp = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+    },
+  });
+
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => "");
+    throw new Error(`GitHub ${resp.status}: ${txt || url}`);
+  }
+  return await resp.json();
+}
+
+async function githubFetchAllPages(urlBase) {
+  const out = [];
+  let page = 1;
+  while (true) {
+    const u = new URL(urlBase);
+    if (!u.searchParams.get("per_page")) u.searchParams.set("per_page", "100");
+    u.searchParams.set("page", String(page));
+
+    const data = await githubFetchJson(u.toString());
+    if (!Array.isArray(data)) break;
+
+    out.push(...data);
+    if (data.length < 100) break;
+
+    page += 1;
+    if (page > 50) break; // safety
+  }
+  return out;
+}
+
+function mergePinnedProjects(pinnedNames, projects) {
+  const byFullName = new Map();
+  for (const p of projects || []) {
+    if (p && p.fullName) byFullName.set(p.fullName, p);
+  }
+
+  const out = [];
+  const seen = new Set();
+
+  for (const name of pinnedNames || []) {
+    if (!name || typeof name !== "string") continue;
+    const fullName = name.trim();
+    if (!fullName || seen.has(fullName)) continue;
+    seen.add(fullName);
+    out.push(byFullName.get(fullName) || { fullName });
+  }
+
+  for (const p of projects || []) {
+    if (!p || !p.fullName) continue;
+    if (seen.has(p.fullName)) continue;
+    seen.add(p.fullName);
+    out.push(p);
+  }
+
+  return out;
+}
+
+// NOTE: this endpoint returns PATHS ONLY (never contents), so it doesn't affect token burn.
+async function fetchRepoFileListFromGitHub(repoFullName) {
+  const repoJson = await githubFetchJson(`https://api.github.com/repos/${repoFullName}`);
+  const branch = repoJson.default_branch;
+
+  const treeJson = await githubFetchJson(
+    `https://api.github.com/repos/${repoFullName}/git/trees/${branch}?recursive=1`
+  );
+
+  const files = (treeJson.tree || [])
+    .filter((n) => n.type === "blob" && typeof n.path === "string")
+    .map((n) => n.path);
+
+  return { branch, files };
+}
+
+async function readRepoFileCache() {
+  return await readJson(repoFileCachePath, {});
+}
+
+async function writeRepoFileCache(cache) {
+  await writeJson(repoFileCachePath, cache);
+}
+
+/* ----------------------- prompt packing ----------------------- */
+
+// Ensure stable ordering for OpenAI Prompt Caching
+function prepareMessagesForModel(messages, options = {}) {
   const { systemPrompt, fileContents = {} } = options;
 
   const prepared = [];
 
-  // 1) Stable system instructions
+  // IMPORTANT for caching: put the biggest stable block first.
+  // We sort keys so the prefix stays identical turn-over-turn.
+  const sortedPaths = Object.keys(fileContents).sort();
+  if (sortedPaths.length > 0) {
+    let repoContext = "ACTIVE REPOSITORY FILES:\n";
+    for (const filePath of sortedPaths) {
+      repoContext += `--- FILE: ${filePath} ---\n${fileContents[filePath]}\n`;
+    }
+    prepared.push({ role: "system", content: repoContext });
+  }
+
+  // Stable instructions next
   prepared.push({
     role: "system",
     content: systemPrompt || "You are an expert AI coding assistant.",
   });
 
-  // 2) Stable repo context, sorted by file path
-  const paths = Object.keys(fileContents).sort();
-  if (paths.length) {
-    let repoBlock = "ACTIVE REPOSITORY FILES (authoritative context):\n";
-    for (const p of paths) {
-      let content = fileContents[p] ?? "";
-      if (content.length > MAX_FILE_CHARS) {
-        content = content.slice(0, MAX_FILE_CHARS) + "\n\n[TRUNCATED: file exceeded max chars]\n";
-      }
-      repoBlock += `\n--- FILE: ${p} ---\n${content}\n`;
-    }
-    prepared.push({ role: "system", content: repoBlock });
-  }
-
-  // 3) Dynamic conversation tail
-  prepared.push(...(conversationMessages || []));
+  // Then the chat tail
+  prepared.push(...messages);
 
   return prepared;
 }
 
-async function maybeSummarizeConversation(convo, config) {
-  // Simple guard: only summarize when we have lots of messages
-  const msgs = convo.messages || [];
-  if (msgs.length < 12) return;
+// Summarize long histories using the cheaper Fast model
+async function getHistorySummary(messages, config) {
+  if (messages.length < 10) return null;
+  const fastModel = config.models.fast;
+  if (!fastModel) return null;
 
-  // Estimate size (rough). You can tune threshold in models.json via summarizationThreshold.
-  const modelForSummary = config.models?.fast || config.models?.full;
-  if (!modelForSummary) return;
+  const textToSummarize = messages
+    .slice(0, -6)
+    .map((m) => `${m.role}: ${m.content}`)
+    .join("\n");
 
-  const threshold =
-    modelForSummary.summarizationThreshold != null
-      ? Number(modelForSummary.summarizationThreshold)
-      : 30_000; // tokens-ish target
+  const prompt = `Summarize the following technical conversation concisely.
+Focus on current state, decisions, and any constraints. Keep it short.
 
-  const estChars = JSON.stringify(msgs).length;
-  // ~1 token ~= 3-4 chars for english-ish; use *3 as a conservative conversion
-  if (estChars < threshold * 3) return;
-
-  const head = msgs.slice(0, -6);
-  const tail = msgs.slice(-6);
-
-  const summaryPrompt =
-    "Summarize the conversation so far for continuity in a coding assistant. " +
-    "Include: key decisions, current repo state assumptions, requirements, what remains to do. " +
-    "Be concise and factual.\n\n" +
-    head.map((m) => `${m.role}: ${m.content}`).join("\n");
+${textToSummarize}`;
 
   let summary = "";
   try {
     for await (const chunk of streamCompletion(
-      modelForSummary,
-      "You summarize conversations for downstream LLM context.",
-      [{ role: "user", content: summaryPrompt }],
-      600
+      fastModel,
+      "Summarize concisely.",
+      [{ role: "user", content: prompt }],
+      512
     )) {
       if (chunk.type === "text") summary += chunk.text;
     }
-    summary = summary.trim();
+    return summary.trim() || null;
   } catch {
-    summary = "";
+    return null;
   }
-
-  if (!summary) return;
-
-  convo.messages = [
-    { role: "system", content: `Conversation Summary:\n${summary}` },
-    ...tail,
-  ];
 }
 
-/**
- * TODO: Replace these placeholders with your real GitHub integration.
- * Your UI expects:
- * - GET /api/projects/:owner/:repo/files -> { files: [...] }
- * - When user attaches files, server should fetch those contents.
- *
- * If you already have a GitHub client module in your repo, tell me the path and
- * I will wire it in without placeholders.
- */
-async function listRepoFilesPlaceholder(_repoFullName) {
-  return ["README.md", "package.json", "config/server.js", "config/public/index.html"];
-}
+/* ----------------------- endpoints ----------------------- */
 
-async function getFileContentPlaceholder(repoFullName, filePath) {
-  return `// Placeholder content\n// repo: ${repoFullName}\n// file: ${filePath}\n\n(Implement GitHub file fetch here.)\n`;
-}
+app.get("/api/projects", async (req, res) => {
+  try {
+    const refresh = String(req.query.refresh || "").toLowerCase() === "true";
 
-/* -------------------- API -------------------- */
+    // Pinned projects: from runtime DATA_DIR/projects.json (optional) and bundled pinnedProjects.json
+    const runtimePinned = await readJson(projectsPath, []);
+    const bundledPinned = await readJson(pinnedProjectsPath, { pinned: [] });
 
-app.get("/api/config", async (_req, res) => {
-  res.json(await loadConfig());
+    const pinnedNames = [];
+    const addPinned = (v) => {
+      if (!v) return;
+      if (typeof v === "string") pinnedNames.push(v);
+      else if (typeof v === "object" && typeof v.fullName === "string") pinnedNames.push(v.fullName);
+    };
+
+    if (Array.isArray(bundledPinned?.pinned)) bundledPinned.pinned.forEach(addPinned);
+    if (Array.isArray(runtimePinned)) runtimePinned.forEach(addPinned);
+
+    // Cache (to avoid rate limits)
+    const cached = await readJson(projectsCachePath, null);
+    const isFresh =
+      cached &&
+      cached.fetchedAt &&
+      Date.now() - new Date(cached.fetchedAt).getTime() < PROJECTS_TTL_MS &&
+      Array.isArray(cached.projects);
+
+    if (!refresh && isFresh) {
+      return res.json(mergePinnedProjects(pinnedNames, cached.projects));
+    }
+
+    // If no token, fall back to pinned only
+    const { key: token } = await getApiKeyWithFallback("github");
+    if (!token) {
+      return res.json(mergePinnedProjects(pinnedNames, []));
+    }
+
+    // Fetch ALL repos user has access to (pagination)
+    const repos = await githubFetchAllPages(
+      "https://api.github.com/user/repos?sort=updated&direction=desc&affiliation=owner,collaborator,organization_member"
+    );
+
+    const projects = [];
+    const seen = new Set();
+    for (const r of repos) {
+      const fullName = r?.full_name;
+      if (!fullName || seen.has(fullName)) continue;
+      seen.add(fullName);
+      projects.push({
+        fullName,
+        private: !!r.private,
+        defaultBranch: r.default_branch,
+        description: r.description || "",
+        updatedAt: r.updated_at || "",
+      });
+    }
+
+    await writeJson(projectsCachePath, {
+      fetchedAt: new Date().toISOString(),
+      projects,
+    });
+
+    return res.json(mergePinnedProjects(pinnedNames, projects));
+  } catch (e) {
+    console.error("GET /api/projects error:", e);
+    // Safe fallback: return runtime pinned list only
+    return res.json(await readJson(projectsPath, []));
+  }
 });
 
-app.get("/api/projects", async (_req, res) => {
-  const projects = await readJson(PROJECTS_PATH, []);
-  res.json(projects);
-});
-
+// NEW: endpoint required by frontend
 app.get("/api/projects/:owner/:repo/files", async (req, res) => {
-  const { owner, repo } = req.params;
-  const repoFullName = `${owner}/${repo}`;
+  try {
+    const { owner, repo } = req.params;
+    const repoFullName = `${owner}/${repo}`;
+    const refresh = String(req.query.refresh || "").toLowerCase() === "true";
 
-  // Replace with real listing logic if available.
-  const files = await listRepoFilesPlaceholder(repoFullName);
-  res.json({ repo: repoFullName, files });
+    const cache = await readRepoFileCache();
+    const cached = cache[repoFullName];
+
+    const isFresh =
+      cached &&
+      cached.fetchedAt &&
+      Date.now() - new Date(cached.fetchedAt).getTime() < REPO_FILES_TTL_MS &&
+      Array.isArray(cached.files);
+
+    if (!refresh && isFresh) {
+      return res.json({
+        repo: repoFullName,
+        branch: cached.branch,
+        files: cached.files,
+        cached: true,
+        fetchedAt: cached.fetchedAt,
+      });
+    }
+
+    const { branch, files } = await fetchRepoFileListFromGitHub(repoFullName);
+
+    cache[repoFullName] = {
+      branch,
+      files,
+      fetchedAt: new Date().toISOString(),
+    };
+    await writeRepoFileCache(cache);
+
+    res.json({
+      repo: repoFullName,
+      branch,
+      files,
+      cached: false,
+      fetchedAt: cache[repoFullName].fetchedAt,
+    });
+  } catch (e) {
+    console.error("GET /api/projects/:owner/:repo/files error:", e);
+    res.status(500).json({ error: e.message || "Failed to load repo files" });
+  }
 });
 
-app.get("/api/conversations", async (_req, res) => {
-  res.json(await readJson(CONVERSATIONS_PATH, []));
+app.get("/api/conversations", async (req, res) => {
+  res.json(await readJson(conversationsPath, []));
 });
 
 app.post("/api/chat", async (req, res) => {
-  const { conversationId, message, repoFullName, loadedFiles = [], modelOverride } = req.body || {};
+  const { conversationId, message, repoFullName, loadedFiles = [], modelOverride } =
+    req.body;
 
-  // SSE headers immediately (fixes "model indicator not updating")
+  // SSE headers should be set before streaming output
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
-  const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
-
   try {
-    if (!message || typeof message !== "string") {
-      send({ type: "error", error: "Missing message" });
-      return res.end();
-    }
-
     const config = await loadConfig();
-    const conversations = await readJson(CONVERSATIONS_PATH, []);
-
+    const conversations = await readJson(conversationsPath, []);
     let convo = conversations.find((c) => c.id === conversationId);
+
     if (!convo) {
       convo = {
         id: Date.now().toString(36),
-        title: "",
         messages: [],
-        repoFullName: repoFullName || "",
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
       };
       conversations.push(convo);
     }
 
-    if (repoFullName) convo.repoFullName = repoFullName;
+    // Smart Routing
+    const route = routeMessage(message, config, loadedFiles.length > 0);
+    const modelKey = modelOverride || route.modelKey;
+    const modelConfig = config.models[modelKey];
 
-    // Route the message (auto/fast/full)
-    const route = routeMessage(message, config, (loadedFiles && loadedFiles.length > 0) || false);
-    const modelKey = modelOverride && modelOverride !== "auto" ? modelOverride : route.modelKey;
-
-    const modelConfig = config.models?.[modelKey];
-    if (!modelConfig) {
-      send({ type: "error", error: `Unknown model key: ${modelKey}` });
-      return res.end();
+    // IMPORTANT: fileContents must only include explicitly selected files.
+    // Your repo file LIST is separate and should never be injected into prompts.
+    const fileContents = {};
+    for (const f of loadedFiles) {
+      // TODO: restore your GitHub file content logic here (explicit selection only)
+      // fileContents[f] = await getFileContent(repoFullName, f);
     }
 
-    // Start event immediately so UI shows model
-    send({ type: "start", conversationId: convo.id, model: modelConfig.displayName || modelConfig.model });
+    // Compaction: If history is too long, summarize it
+    const summaryThreshold = modelConfig.summarizationThreshold || 40000;
+    const currentEstTokens = JSON.stringify(convo.messages).length / 4;
 
-    // Attach file contents (with limits)
-    const fileContents = {};
-    const filesToFetch = Array.isArray(loadedFiles) ? loadedFiles.slice(0, MAX_FILES) : [];
-
-    for (const fp of filesToFetch) {
-      try {
-        fileContents[fp] = await getFileContentPlaceholder(repoFullName, fp);
-      } catch (e) {
-        fileContents[fp] = `[Error loading ${fp}: ${e.message}]`;
+    if (currentEstTokens > summaryThreshold) {
+      const summary = await getHistorySummary(convo.messages, config);
+      if (summary) {
+        convo.messages = [
+          { role: "system", content: "Conversation Summary: " + summary },
+          ...convo.messages.slice(-6),
+        ];
       }
     }
 
-    // Optional history compaction to reduce costs
-    await maybeSummarizeConversation(convo, config);
-
-    // Append user message
     convo.messages.push({
       role: "user",
       content: message,
       timestamp: new Date().toISOString(),
     });
 
-    // Pack final prompt with stable prefix for caching
     const finalMessages = prepareMessagesForModel(convo.messages, {
       systemPrompt: config.systemPrompt,
       fileContents,
     });
 
-    let assistantText = "";
-    let usage = { inputTokens: 0, outputTokens: 0, cachedTokens: 0, finishReason: "stop" };
+    res.write(
+      `data: ${JSON.stringify({
+        type: "start",
+        conversationId: convo.id,
+        model: modelConfig.displayName,
+      })}\n\n`
+    );
 
-    // IMPORTANT: pass systemPrompt = null because finalMessages already include system messages.
-    for await (const chunk of streamCompletion(modelConfig, null, finalMessages, modelConfig.maxOutputTokens)) {
+    let fullResponse = "";
+    let usage = { inputTokens: 0, outputTokens: 0 };
+
+    // IMPORTANT: pass null here so providers don't add another system message.
+    // We already packed system messages into finalMessages.
+    for await (const chunk of streamCompletion(
+      modelConfig,
+      null,
+      finalMessages,
+      modelConfig.maxOutputTokens
+    )) {
       if (chunk.type === "text") {
-        assistantText += chunk.text;
-        send({ type: "text", text: chunk.text });
+        fullResponse += chunk.text;
+        res.write(`data: ${JSON.stringify({ type: "text", text: chunk.text })}\n\n`);
       } else if (chunk.type === "done") {
         usage = chunk;
       }
@@ -278,37 +446,32 @@ app.post("/api/chat", async (req, res) => {
 
     convo.messages.push({
       role: "assistant",
-      content: assistantText,
+      content: fullResponse,
       timestamp: new Date().toISOString(),
-      model: modelConfig.displayName || modelConfig.model,
+      model: modelConfig.displayName,
     });
-
     convo.updatedAt = new Date().toISOString();
-    if (!convo.title) convo.title = message.slice(0, 48) + (message.length > 48 ? "…" : "");
+    await writeJson(conversationsPath, conversations);
 
-    await writeJson(CONVERSATIONS_PATH, conversations);
-
-    const cost = calculateCost(modelConfig, usage.inputTokens || 0, usage.outputTokens || 0);
-
-    send({
-      type: "done",
-      cost,
-      inputTokens: usage.inputTokens || 0,
-      outputTokens: usage.outputTokens || 0,
-      cachedTokens: usage.cachedTokens || 0,
-      finishReason: usage.finishReason || "stop",
-    });
-
+    const cost = calculateCost(modelConfig, usage.inputTokens, usage.outputTokens);
+    res.write(
+      `data: ${JSON.stringify({
+        type: "done",
+        cost,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+      })}\n\n`
+    );
     res.end();
   } catch (err) {
-    console.error("Chat error:", err);
-    send({ type: "error", error: err?.message || String(err) });
+    console.error("Chat Error:", err);
+    res.write(`data: ${JSON.stringify({ type: "error", error: err.message })}\n\n`);
     res.end();
   }
 });
 
+// Standard static routes and listen
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server listening on port ${PORT}`);
-  console.log(`ROOT_DIR: ${ROOT_DIR}`);
-  console.log(`DATA_DIR: ${DATA_DIR}`);
+  console.log(`🚀 Server listening on port ${PORT}`);
+  console.log(`📂 Data directory: ${DATA_DIR}`);
 });
