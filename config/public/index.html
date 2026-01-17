@@ -1,12 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
   <title>AI Code Helper</title>
+
+  <!-- Stop favicon 404 -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🤖</text></svg>">
+
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
   <style>
     :root{--bg:#0d1117;--bg2:#161b22;--bg3:#21262d;--bg4:#30363d;--border:#30363d;--text:#e6edf3;--text2:#8b949e;--text3:#6e7681;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;--purple:#a371f7;--sans:'Plus Jakarta Sans',sans-serif;--mono:'JetBrains Mono',monospace}
     *{box-sizing:border-box;margin:0;padding:0}html,body{height:100%;overflow:hidden}
@@ -44,6 +53,13 @@
     .msg-content pre{margin:12px 0;border-radius:8px;overflow:hidden}
     .msg-content pre code{display:block;padding:12px;background:var(--bg3);overflow-x:auto;font-size:13px}
     .msg-content code{font-family:var(--mono);background:var(--bg3);padding:2px 6px;border-radius:4px;font-size:13px}
+
+    .file-collapse{border:1px solid var(--border);border-radius:8px;margin:12px 0;background:var(--bg2);overflow:hidden}
+    .file-collapse summary{padding:10px 14px;background:var(--bg3);cursor:pointer;user-select:none;font-family:var(--mono);font-size:13px;display:flex;align-items:center;gap:8px}
+    .file-collapse summary:hover{background:var(--bg4)}
+    .file-collapse pre{margin:0;border:none;border-radius:0}
+    .file-collapse pre code{padding:15px;background:transparent}
+
     .input-area{padding:12px 16px;border-top:1px solid var(--border);background:var(--bg2)}
     .input-inner{max-width:800px;margin:0 auto}
     .model-toggle{display:flex;gap:4px;margin-bottom:10px;background:var(--bg3);padding:4px;border-radius:8px;width:fit-content}
@@ -53,6 +69,7 @@
     .input-box textarea{width:100%;padding:14px 16px;padding-right:90px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;color:var(--text);font-family:var(--sans);font-size:15px;resize:none;min-height:52px;max-height:150px}
     .input-actions{position:absolute;right:8px;bottom:8px;display:flex;gap:6px}
     .input-actions button{padding:10px 16px;background:var(--accent);border:none;border-radius:6px;color:var(--bg);font-weight:600;cursor:pointer;font-size:14px}
+    .input-actions button:disabled{opacity:.5;cursor:not-allowed}
     .input-actions button.attach{background:transparent;color:var(--text2);padding:10px}
     .modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px}
     .modal.active{display:flex}
@@ -131,10 +148,44 @@
   </div>
 
 <script>
-marked.setOptions({
-  highlight:(c,l)=>l&&hljs.getLanguage(l)?hljs.highlight(c,{language:l}).value:hljs.highlightAuto(c).value,
-  breaks:true
-});
+const renderer = new marked.Renderer();
+renderer.code = (code, language) => {
+  const filenameMatch = code.match(/(\/\/\s*filepath:\s*|---\s*FILE:\s*|File:\s*)([^\n]+)/i);
+  const filename = filenameMatch ? filenameMatch[2].trim() : (language || 'code');
+  const isLong = code.split('\n').length > 10 || !!filenameMatch;
+
+  let highlighted;
+  try {
+    highlighted = language ? hljs.highlight(code, {language}).value : hljs.highlightAuto(code).value;
+  } catch {
+    highlighted = code;
+  }
+
+  if (isLong) {
+    return `
+      <details class="file-collapse">
+        <summary>📄 ${escapeHtml(filename)}</summary>
+        <pre><code class="hljs ${escapeHtml(language || '')}">${highlighted}</code></pre>
+      </details>
+    `;
+  }
+  return `<pre><code class="hljs ${escapeHtml(language || '')}">${highlighted}</code></pre>`;
+};
+
+marked.setOptions({ renderer, breaks: true, gfm: true });
+
+function safeMarkdown(content) {
+  const raw = marked.parse(content || '');
+  return DOMPurify.sanitize(raw, {
+    ADD_TAGS: ['details','summary'],
+    FORBID_TAGS: ['style','link','iframe','script'],
+    FORBID_ATTR: ['onerror','onload']
+  });
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 const state={
   conversationId:null,
@@ -150,11 +201,7 @@ const $=id=>document.getElementById(id);
 
 function setIndicator(text, color){
   const el = $('modelIndicator');
-  const dot = el.querySelector('.dot');
-  el.lastChild && (el.lastChild.textContent = '');
-  el.innerHTML = `<span class="dot"></span>${text}`;
-  const newDot = el.querySelector('.dot');
-  newDot.style.background = color || 'var(--green)';
+  el.innerHTML = `<span class="dot" style="background:${color || 'var(--green)'}"></span>${text}`;
 }
 
 function showToast(m){
@@ -180,10 +227,13 @@ async function loadConversations(){
 }
 
 function renderConversations(){
-  $('conversations').innerHTML=state.conversations.map(c=>
-    `<div class="conv-item${c.id===state.conversationId?' active':''}" data-id="${c.id}">
-      <span class="title">${c.title||'Chat'}</span>
-    </div>`).join('');
+  $('conversations').innerHTML = state.conversations
+    .sort((a,b)=>new Date(b.updatedAt||0)-new Date(a.updatedAt||0))
+    .map(c=>
+      `<div class="conv-item${c.id===state.conversationId?' active':''}" data-id="${c.id}">
+        <span class="title">${c.title||'Chat'}</span>
+      </div>`
+    ).join('');
 
   $('conversations').querySelectorAll('.conv-item').forEach(el=>{
     el.onclick=()=>loadConversation(el.dataset.id);
@@ -224,8 +274,13 @@ function appendMessage(role,content,model='',animate=true){
     <div class="msg-content"></div>
   `;
   const cel=msg.querySelector('.msg-content');
-  if(role==='assistant') cel.innerHTML=marked.parse(content||'');
-  else cel.innerHTML=`<p>${(content||'')}</p>`;
+  if(role==='assistant'){
+    cel.innerHTML = safeMarkdown(content||'');
+    // collapse all file blocks by default when re-rendering history
+    cel.querySelectorAll('details.file-collapse').forEach(d=>d.removeAttribute('open'));
+  } else {
+    cel.textContent = content || '';
+  }
   $('messagesInner').appendChild(msg);
   return msg;
 }
@@ -257,7 +312,7 @@ $('attachBtn').onclick=()=>{
 function renderFileTree(f=''){
   const fl=state.repoFiles.filter(x=>x.toLowerCase().includes(f.toLowerCase()));
   $('fileTree').innerHTML=fl.slice(0,200).map(x=>
-    `<div class="file-item${state.selectedFiles.has(x)?' selected':''}" data-path="${x}">📄 ${x}</div>`
+    `<div class="file-item${state.selectedFiles.has(x)?' selected':''}" data-path="${escapeHtml(x)}">📄 ${escapeHtml(x)}</div>`
   ).join('');
 
   $('fileTree').querySelectorAll('.file-item').forEach(e=>e.onclick=()=>{
@@ -293,7 +348,6 @@ async function sendMessage(){
 
   state.streaming=true;
   $('sendBtn').disabled=true;
-
   setIndicator('Sending…', 'var(--yellow)');
 
   appendMessage('user',m);
@@ -324,7 +378,6 @@ async function sendMessage(){
     const reader=res.body.getReader();
     const dec=new TextDecoder();
 
-    // Robust SSE parsing with buffering (chunks can split lines)
     let sseBuffer = '';
     let full='';
 
@@ -349,10 +402,9 @@ async function sendMessage(){
             setIndicator(`Model: ${d.model}`, 'var(--green)');
           } else if(d.type==='text'){
             full+=d.text;
-            cel.innerHTML=marked.parse(full);
+            cel.innerHTML = safeMarkdown(full);
             $('messages').scrollTop=$('messages').scrollHeight;
           } else if(d.type==='done'){
-            // Show cost/tokens briefly; helps validate token reduction
             const cost = (typeof d.cost === 'number') ? `$${d.cost.toFixed(4)}` : '';
             const toks = (d.inputTokens!=null && d.outputTokens!=null) ? `in:${d.inputTokens} out:${d.outputTokens}` : '';
             const cached = (d.cachedTokens!=null) ? ` cached:${d.cachedTokens}` : '';
@@ -361,9 +413,7 @@ async function sendMessage(){
           } else if(d.type==='error'){
             setIndicator(`Error: ${d.error}`, 'var(--red)');
           }
-        }catch(e){
-          // ignore malformed frames
-        }
+        }catch{}
       }
     }
   }catch(e){
