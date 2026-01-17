@@ -3,14 +3,8 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs/promises";
-import crypto from "crypto";
-import { 
-  initializeProviders, 
-  isProviderAvailable, 
-  streamCompletion, 
-  calculateCost, 
-  reloadProviders 
-} from "./providers/index.js";
+
+import { initializeProviders, streamCompletion, calculateCost } from "./providers/index.js";
 import { routeMessage } from "./providers/router.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -18,28 +12,36 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 8080;
-const ROOT_DIR = path.resolve(__dirname, '..');
-const DATA_DIR = process.env.DATA_DIR || path.join(ROOT_DIR, 'data');
-const CONFIG_PATH = path.join(DATA_DIR, 'models.json');
-const SECRETS_PATH = path.join(DATA_DIR, 'secrets.json');
-const conversationsPath = path.join(DATA_DIR, 'conversations.json');
-const projectsPath = path.join(DATA_DIR, 'projects.json');
 
-// Safety Limits
-const MAX_FILE_SIZE = 100 * 1024; // 100KB per file max
-const MAX_FILES = 15; // Max files to send to AI at once
+// Railway persistent volume is mounted at /app per your deployment summary.
+// Your repo lives under /app/config for code, and we persist runtime data under /app/data.
+const ROOT_DIR = path.resolve(__dirname, "..");
+const DATA_DIR = process.env.DATA_DIR || path.join(ROOT_DIR, "data");
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+// Runtime JSON state
+const CONFIG_PATH = path.join(DATA_DIR, "models.json");
+const CONVERSATIONS_PATH = path.join(DATA_DIR, "conversations.json");
+const PROJECTS_PATH = path.join(DATA_DIR, "projects.json");
 
-// Initialize
-let providerStatus = initializeProviders();
+// Safety limits to prevent runaway context costs
+const MAX_FILES = Number(process.env.MAX_FILES || 15);
+const MAX_FILE_CHARS = Number(process.env.MAX_FILE_CHARS || 120_000); // ~120k chars/file cap in prompt
 
-/* --- Helpers --- */
+app.use(express.json({ limit: "10mb" }));
+app.use(express.static(path.join(__dirname, "public")));
 
-async function readJson(filePath, defaultValue) {
-  try { return JSON.parse(await fs.readFile(filePath, "utf8")); }
-  catch { return defaultValue; }
+// Initialize providers from env
+initializeProviders();
+
+/* -------------------- Utilities -------------------- */
+
+async function readJson(filePath, fallback) {
+  try {
+    const raw = await fs.readFile(filePath, "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
 }
 
 async function writeJson(filePath, value) {
@@ -48,196 +50,265 @@ async function writeJson(filePath, value) {
 }
 
 async function loadConfig() {
-  const defaults = await readJson(path.join(__dirname, 'config', 'models.json'), {});
+  // Defaults baked into repo
+  const defaultConfigPath = path.join(__dirname, "config", "models.json");
+  const defaults = await readJson(defaultConfigPath, {});
+  // Runtime overrides on the persistent volume
   const runtime = await readJson(CONFIG_PATH, {});
+  // Shallow merge is fine for this config structure
   return { ...defaults, ...runtime };
 }
 
 /**
- * Optimizes message order for OpenAI Prompt Caching.
- * Stable Prefix = System Prompt + Sorted File Contents.
+ * Prompt caching strategy:
+ * - Put the MOST STABLE prefix first: system instructions + repo/file context (sorted)
+ * - Append dynamic conversation last
+ *
+ * NOTE: We pack system messages ourselves, so provider streaming should receive `systemPrompt = null`.
  */
-function prepareMessagesForModel(messages, options = {}) {
+function prepareMessagesForModel(conversationMessages, options = {}) {
   const { systemPrompt, fileContents = {} } = options;
+
   const prepared = [];
-  
-  // 1. Static System Instructions (Most stable)
-  prepared.push({ 
-    role: 'system', 
-    content: systemPrompt || "You are an expert AI coding assistant." 
+
+  // 1) Stable system instructions
+  prepared.push({
+    role: "system",
+    content: systemPrompt || "You are an expert AI coding assistant.",
   });
 
-  // 2. Stable File Context (Sorted alphabetically)
-  const sortedPaths = Object.keys(fileContents).sort();
-  if (sortedPaths.length > 0) {
-    let repoContext = "ACTIVE REPOSITORY FILES:\n";
-    for (const filePath of sortedPaths) {
-      const content = fileContents[filePath];
-      // Skip files that are too large
-      if (content.length > MAX_FILE_SIZE) {
-        repoContext += `--- FILE: ${filePath} ---\n[File omitted: exceeds size limit]\n`;
-      } else {
-        repoContext += `--- FILE: ${filePath} ---\n${content}\n`;
+  // 2) Stable repo context, sorted by file path
+  const paths = Object.keys(fileContents).sort();
+  if (paths.length) {
+    let repoBlock = "ACTIVE REPOSITORY FILES (authoritative context):\n";
+    for (const p of paths) {
+      let content = fileContents[p] ?? "";
+      if (content.length > MAX_FILE_CHARS) {
+        content = content.slice(0, MAX_FILE_CHARS) + "\n\n[TRUNCATED: file exceeded max chars]\n";
       }
+      repoBlock += `\n--- FILE: ${p} ---\n${content}\n`;
     }
-    prepared.push({ role: 'system', content: repoContext });
+    prepared.push({ role: "system", content: repoBlock });
   }
 
-  // 3. Dynamic Conversation (The "tail" that changes)
-  prepared.push(...messages);
+  // 3) Dynamic conversation tail
+  prepared.push(...(conversationMessages || []));
 
   return prepared;
 }
 
-async function getHistorySummary(messages, config) {
-  if (messages.length < 8) return null;
-  const fastModel = config.models.fast;
-  const textToSummarize = messages.slice(0, -4).map(m => `${m.role}: ${m.content}`).join("\n");
-  const prompt = `Summarize the technical state of this chat concisely. Decisions made, current tasks, and code context. Be brief.`;
-  
+async function maybeSummarizeConversation(convo, config) {
+  // Simple guard: only summarize when we have lots of messages
+  const msgs = convo.messages || [];
+  if (msgs.length < 12) return;
+
+  // Estimate size (rough). You can tune threshold in models.json via summarizationThreshold.
+  const modelForSummary = config.models?.fast || config.models?.full;
+  if (!modelForSummary) return;
+
+  const threshold =
+    modelForSummary.summarizationThreshold != null
+      ? Number(modelForSummary.summarizationThreshold)
+      : 30_000; // tokens-ish target
+
+  const estChars = JSON.stringify(msgs).length;
+  // ~1 token ~= 3-4 chars for english-ish; use *3 as a conservative conversion
+  if (estChars < threshold * 3) return;
+
+  const head = msgs.slice(0, -6);
+  const tail = msgs.slice(-6);
+
+  const summaryPrompt =
+    "Summarize the conversation so far for continuity in a coding assistant. " +
+    "Include: key decisions, current repo state assumptions, requirements, what remains to do. " +
+    "Be concise and factual.\n\n" +
+    head.map((m) => `${m.role}: ${m.content}`).join("\n");
+
   let summary = "";
   try {
-    for await (const chunk of streamCompletion(fastModel, "Summarize concisely.", [{role: "user", content: prompt + "\n\n" + textToSummarize}], 512)) {
+    for await (const chunk of streamCompletion(
+      modelForSummary,
+      "You summarize conversations for downstream LLM context.",
+      [{ role: "user", content: summaryPrompt }],
+      600
+    )) {
       if (chunk.type === "text") summary += chunk.text;
     }
-    return summary.trim();
-  } catch (e) {
-    return null;
+    summary = summary.trim();
+  } catch {
+    summary = "";
   }
+
+  if (!summary) return;
+
+  convo.messages = [
+    { role: "system", content: `Conversation Summary:\n${summary}` },
+    ...tail,
+  ];
 }
 
 /**
- * simulated GitHub fetch - Replace with your actual GitHub client logic
+ * TODO: Replace these placeholders with your real GitHub integration.
+ * Your UI expects:
+ * - GET /api/projects/:owner/:repo/files -> { files: [...] }
+ * - When user attaches files, server should fetch those contents.
+ *
+ * If you already have a GitHub client module in your repo, tell me the path and
+ * I will wire it in without placeholders.
  */
-async function getFileContent(repo, path) {
-    // This is where your actual octokit or fetch logic goes.
-    // For now, it's a placeholder to prevent the 404.
-    return `// Content for ${path} from ${repo}\n(Actual content fetching logic needs implementation)`;
+async function listRepoFilesPlaceholder(_repoFullName) {
+  return ["README.md", "package.json", "config/server.js", "config/public/index.html"];
 }
 
-/* --- Endpoints --- */
+async function getFileContentPlaceholder(repoFullName, filePath) {
+  return `// Placeholder content\n// repo: ${repoFullName}\n// file: ${filePath}\n\n(Implement GitHub file fetch here.)\n`;
+}
 
-app.get("/api/config", async (req, res) => {
-    res.json(await loadConfig());
+/* -------------------- API -------------------- */
+
+app.get("/api/config", async (_req, res) => {
+  res.json(await loadConfig());
 });
 
-app.get("/api/projects", async (req, res) => {
-  res.json(await readJson(projectsPath, []));
+app.get("/api/projects", async (_req, res) => {
+  const projects = await readJson(PROJECTS_PATH, []);
+  res.json(projects);
 });
 
-// Fix for the 404 error when UI tries to list files
 app.get("/api/projects/:owner/:repo/files", async (req, res) => {
   const { owner, repo } = req.params;
   const repoFullName = `${owner}/${repo}`;
-  // In a real app, you'd fetch the tree from GitHub here.
-  // Returning a placeholder list so the UI works.
-  res.json({ repo: repoFullName, files: ["package.json", "index.js", "src/App.js"] });
+
+  // Replace with real listing logic if available.
+  const files = await listRepoFilesPlaceholder(repoFullName);
+  res.json({ repo: repoFullName, files });
 });
 
-app.get("/api/conversations", async (req, res) => {
-  res.json(await readJson(conversationsPath, []));
+app.get("/api/conversations", async (_req, res) => {
+  res.json(await readJson(CONVERSATIONS_PATH, []));
 });
 
 app.post("/api/chat", async (req, res) => {
-  const { conversationId, message, repoFullName, loadedFiles = [], modelOverride } = req.body;
-  
-  // 1. SET SSE HEADERS IMMEDIATELY
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
+  const { conversationId, message, repoFullName, loadedFiles = [], modelOverride } = req.body || {};
+
+  // SSE headers immediately (fixes "model indicator not updating")
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  const send = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
 
   try {
-    const config = await loadConfig();
-    const conversations = await readJson(conversationsPath, []);
-    let convo = conversations.find(c => c.id === conversationId);
+    if (!message || typeof message !== "string") {
+      send({ type: "error", error: "Missing message" });
+      return res.end();
+    }
 
+    const config = await loadConfig();
+    const conversations = await readJson(CONVERSATIONS_PATH, []);
+
+    let convo = conversations.find((c) => c.id === conversationId);
     if (!convo) {
-      convo = { id: Date.now().toString(36), messages: [], createdAt: new Date().toISOString() };
+      convo = {
+        id: Date.now().toString(36),
+        title: "",
+        messages: [],
+        repoFullName: repoFullName || "",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
       conversations.push(convo);
     }
 
-    // 2. SMART ROUTING
-    const route = routeMessage(message, config, (loadedFiles && loadedFiles.length > 0));
-    const modelKey = (modelOverride && modelOverride !== 'auto') ? modelOverride : route.modelKey;
-    const modelConfig = config.models[modelKey];
+    if (repoFullName) convo.repoFullName = repoFullName;
 
-    // 3. SEND START EVENT IMMEDIATELY (Fixes UI Indicator)
-    res.write(`data: ${JSON.stringify({ type: "start", conversationId: convo.id, model: modelConfig.displayName })}\n\n`);
+    // Route the message (auto/fast/full)
+    const route = routeMessage(message, config, (loadedFiles && loadedFiles.length > 0) || false);
+    const modelKey = modelOverride && modelOverride !== "auto" ? modelOverride : route.modelKey;
 
-    // 4. FETCH FILES (With Safety Limits)
-    const fileContents = {};
-    const filesToFetch = loadedFiles.slice(0, MAX_FILES);
-    for (const f of filesToFetch) {
-       fileContents[f] = await getFileContent(repoFullName, f); 
+    const modelConfig = config.models?.[modelKey];
+    if (!modelConfig) {
+      send({ type: "error", error: `Unknown model key: ${modelKey}` });
+      return res.end();
     }
 
-    // 5. HISTORY COMPACTION (Check token budget)
-    const summaryThreshold = modelConfig.summarizationThreshold || 30000;
-    const currentEstChars = JSON.stringify(convo.messages).length;
-    
-    if (currentEstChars > summaryThreshold * 3) { // 1 token ~ 3-4 chars
-      const summary = await getHistorySummary(convo.messages, config);
-      if (summary) {
-        convo.messages = [
-          { role: "system", content: "Conversation Summary: " + summary },
-          ...convo.messages.slice(-4) // Keep only the most recent context
-        ];
+    // Start event immediately so UI shows model
+    send({ type: "start", conversationId: convo.id, model: modelConfig.displayName || modelConfig.model });
+
+    // Attach file contents (with limits)
+    const fileContents = {};
+    const filesToFetch = Array.isArray(loadedFiles) ? loadedFiles.slice(0, MAX_FILES) : [];
+
+    for (const fp of filesToFetch) {
+      try {
+        fileContents[fp] = await getFileContentPlaceholder(repoFullName, fp);
+      } catch (e) {
+        fileContents[fp] = `[Error loading ${fp}: ${e.message}]`;
       }
     }
 
-    convo.messages.push({ role: "user", content: message, timestamp: new Date().toISOString() });
+    // Optional history compaction to reduce costs
+    await maybeSummarizeConversation(convo, config);
 
-    // 6. PREPARE PACKED PROMPT
-    const finalMessages = prepareMessagesForModel(convo.messages, {
-      systemPrompt: config.systemPrompt,
-      fileContents
+    // Append user message
+    convo.messages.push({
+      role: "user",
+      content: message,
+      timestamp: new Date().toISOString(),
     });
 
-    let fullResponse = "";
-    let usage = { inputTokens: 0, outputTokens: 0, cachedTokens: 0 };
+    // Pack final prompt with stable prefix for caching
+    const finalMessages = prepareMessagesForModel(convo.messages, {
+      systemPrompt: config.systemPrompt,
+      fileContents,
+    });
 
-    // 7. STREAM COMPLETION
-    // Pass null as systemPrompt because we manually packed it into finalMessages
+    let assistantText = "";
+    let usage = { inputTokens: 0, outputTokens: 0, cachedTokens: 0, finishReason: "stop" };
+
+    // IMPORTANT: pass systemPrompt = null because finalMessages already include system messages.
     for await (const chunk of streamCompletion(modelConfig, null, finalMessages, modelConfig.maxOutputTokens)) {
       if (chunk.type === "text") {
-        fullResponse += chunk.text;
-        res.write(`data: ${JSON.stringify({ type: "text", text: chunk.text })}\n\n`);
+        assistantText += chunk.text;
+        send({ type: "text", text: chunk.text });
       } else if (chunk.type === "done") {
         usage = chunk;
       }
     }
 
-    // 8. SAVE CONVERSATION
-    convo.messages.push({ 
-      role: "assistant", 
-      content: fullResponse, 
-      timestamp: new Date().toISOString(), 
-      model: modelConfig.displayName 
+    convo.messages.push({
+      role: "assistant",
+      content: assistantText,
+      timestamp: new Date().toISOString(),
+      model: modelConfig.displayName || modelConfig.model,
     });
+
     convo.updatedAt = new Date().toISOString();
-    convo.title = convo.title || message.substring(0, 40) + "...";
-    
-    await writeJson(conversationsPath, conversations);
+    if (!convo.title) convo.title = message.slice(0, 48) + (message.length > 48 ? "…" : "");
 
-    // 9. FINAL USAGE DATA
-    const cost = calculateCost(modelConfig, usage.inputTokens, usage.outputTokens);
-    res.write(`data: ${JSON.stringify({ 
-      type: "done", 
-      cost, 
-      inputTokens: usage.inputTokens, 
-      outputTokens: usage.outputTokens,
-      cachedTokens: usage.cachedTokens
-    })}\n\n`);
+    await writeJson(CONVERSATIONS_PATH, conversations);
+
+    const cost = calculateCost(modelConfig, usage.inputTokens || 0, usage.outputTokens || 0);
+
+    send({
+      type: "done",
+      cost,
+      inputTokens: usage.inputTokens || 0,
+      outputTokens: usage.outputTokens || 0,
+      cachedTokens: usage.cachedTokens || 0,
+      finishReason: usage.finishReason || "stop",
+    });
+
     res.end();
-
   } catch (err) {
-    console.error("Chat Error:", err);
-    res.write(`data: ${JSON.stringify({ type: "error", error: err.message })}\n\n`);
+    console.error("Chat error:", err);
+    send({ type: "error", error: err?.message || String(err) });
     res.end();
   }
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server listening on port ${PORT}`);
-  console.log(`📂 Data directory: ${DATA_DIR}`);
+  console.log(`Server listening on port ${PORT}`);
+  console.log(`ROOT_DIR: ${ROOT_DIR}`);
+  console.log(`DATA_DIR: ${DATA_DIR}`);
 });
