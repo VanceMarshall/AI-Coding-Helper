@@ -97,6 +97,56 @@ async function githubFetchJson(url) {
   return await resp.json();
 }
 
+async function githubRequestJson(url, { method = "GET", body } = {}) {
+  const { key: token } = await getApiKeyWithFallback("github");
+  if (!token) throw new Error("GITHUB_TOKEN not configured");
+
+  const resp = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  const txt = await resp.text().catch(() => "");
+  if (!resp.ok) throw new Error(`GitHub ${resp.status}: ${txt || url}`);
+  if (!txt) return {};
+  try {
+    return JSON.parse(txt);
+  } catch {
+    return {};
+  }
+}
+
+function sanitizeRepoPath(filePath) {
+  const raw = String(filePath || "").trim().replace(/^\//, "");
+  if (!raw) throw new Error("filePath is required");
+  // prevent path traversal / weirdness
+  const parts = raw.split("/");
+  if (parts.some((p) => p === ".." || p === "." || p.includes("\\"))) {
+    throw new Error("Invalid filePath");
+  }
+  return raw;
+}
+
+function stripFilePathHeader(codeText) {
+  const lines = String(codeText || "").split(/\r?\n/);
+  let i = 0;
+  while (i < Math.min(lines.length, 6) && lines[i].trim() === "") i++;
+  if (
+    i < lines.length &&
+    /filepath:\s*/i.test(lines[i]) &&
+    /^\s*(?:\/\/|#|;|--|\/\*|\*|<!--)/.test(lines[i])
+  ) {
+    lines.splice(i, 1);
+    if (i < lines.length && lines[i].trim() === "") lines.splice(i, 1);
+  }
+  return lines.join("\n");
+}
+
 // NOTE: this endpoint returns PATHS ONLY (never contents), so it doesn't affect token burn.
 async function fetchRepoFileListFromGitHub(repoFullName) {
   const repoJson = await githubFetchJson(`https://api.github.com/repos/${repoFullName}`);
@@ -272,6 +322,119 @@ app.get("/api/conversations", async (req, res) => {
   res.json(await readJson(conversationsPath, []));
 });
 
+app.patch("/api/conversations/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title } = req.body || {};
+    if (!title || typeof title !== "string" || !title.trim()) {
+      return res.status(400).json({ error: "title is required" });
+    }
+
+    const conversations = await readJson(conversationsPath, []);
+    const convo = conversations.find((c) => c.id === id);
+    if (!convo) return res.status(404).json({ error: "Not found" });
+
+    convo.title = title.trim().slice(0, 120);
+    convo.updatedAt = new Date().toISOString();
+    await writeJson(conversationsPath, conversations);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("PATCH /api/conversations/:id error:", e);
+    res.status(500).json({ error: e.message || "Rename failed" });
+  }
+});
+
+// Create a DRAFT PR from a single full-file code block. Never commits to the default branch.
+app.post("/api/pr/create", async (req, res) => {
+  try {
+    const { repoFullName, conversationId, filePath, content, title } = req.body || {};
+    if (!repoFullName || typeof repoFullName !== "string") {
+      return res.status(400).json({ error: "repoFullName is required" });
+    }
+    const cleanPath = sanitizeRepoPath(filePath);
+    const cleanContent = stripFilePathHeader(content);
+
+    const repo = await githubFetchJson(`https://api.github.com/repos/${repoFullName}`);
+    const baseBranch = repo.default_branch;
+    if (!baseBranch) throw new Error("Could not determine default_branch");
+
+    const baseRef = await githubFetchJson(
+      `https://api.github.com/repos/${repoFullName}/git/ref/heads/${baseBranch}`
+    );
+    const baseSha = baseRef?.object?.sha;
+    if (!baseSha) throw new Error("Could not read base branch ref sha");
+
+    const safeConvo = String(conversationId || "new")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "")
+      .slice(0, 32);
+    const branch = `ai/${safeConvo}-${Date.now().toString(36)}`;
+
+    // Create branch
+    await githubRequestJson(`https://api.github.com/repos/${repoFullName}/git/refs`, {
+      method: "POST",
+      body: { ref: `refs/heads/${branch}`, sha: baseSha },
+    });
+
+    // Build a single commit with Git Data API (blob -> tree -> commit -> ref)
+    const baseCommit = await githubFetchJson(
+      `https://api.github.com/repos/${repoFullName}/git/commits/${baseSha}`
+    );
+    const baseTreeSha = baseCommit?.tree?.sha;
+    if (!baseTreeSha) throw new Error("Could not read base tree sha");
+
+    const blob = await githubRequestJson(
+      `https://api.github.com/repos/${repoFullName}/git/blobs`,
+      { method: "POST", body: { content: cleanContent, encoding: "utf-8" } }
+    );
+    if (!blob?.sha) throw new Error("Failed to create blob");
+
+    const newTree = await githubRequestJson(
+      `https://api.github.com/repos/${repoFullName}/git/trees`,
+      {
+        method: "POST",
+        body: {
+          base_tree: baseTreeSha,
+          tree: [{ path: cleanPath, mode: "100644", type: "blob", sha: blob.sha }],
+        },
+      }
+    );
+    if (!newTree?.sha) throw new Error("Failed to create tree");
+
+    const commitMessage = (typeof title === "string" && title.trim())
+      ? title.trim().slice(0, 120)
+      : `AI patch: ${cleanPath}`;
+
+    const commit = await githubRequestJson(
+      `https://api.github.com/repos/${repoFullName}/git/commits`,
+      { method: "POST", body: { message: commitMessage, tree: newTree.sha, parents: [baseSha] } }
+    );
+    if (!commit?.sha) throw new Error("Failed to create commit");
+
+    await githubRequestJson(
+      `https://api.github.com/repos/${repoFullName}/git/refs/heads/${branch}`,
+      { method: "PATCH", body: { sha: commit.sha, force: false } }
+    );
+
+    const pr = await githubRequestJson(`https://api.github.com/repos/${repoFullName}/pulls`, {
+      method: "POST",
+      body: {
+        title: commitMessage,
+        head: branch,
+        base: baseBranch,
+        body: "Created by AI Code Helper",
+        draft: true,
+      },
+    });
+    if (!pr?.html_url) throw new Error("Failed to create PR");
+
+    res.json({ prUrl: pr.html_url, branch, base: baseBranch, prNumber: pr.number });
+  } catch (e) {
+    console.error("POST /api/pr/create error:", e);
+    res.status(500).json({ error: e.message || "Create PR failed" });
+  }
+});
+
 app.post("/api/chat", async (req, res) => {
   const { conversationId, message, repoFullName, loadedFiles = [], modelOverride } =
     req.body;
@@ -294,6 +457,14 @@ app.post("/api/chat", async (req, res) => {
       };
       conversations.push(convo);
     }
+
+	    // Persist lightweight metadata for nicer UX
+	    if (repoFullName && typeof repoFullName === "string") convo.repoFullName = repoFullName;
+	    if (!convo.title && typeof message === "string" && convo.messages.length === 0) {
+	      const t = message.trim();
+	      if (t) convo.title = t.slice(0, 60);
+	    }
+	    convo.updatedAt = new Date().toISOString();
 
     // Smart Routing
     const route = routeMessage(message, config, loadedFiles.length > 0);
