@@ -39,6 +39,7 @@ const REPO_FILES_TTL_MS = 1000 * 60 * 30; // 30 minutes
 // Chat safety + cost controls
 const MAX_FILES_PER_CHAT = parseInt(process.env.MAX_FILES_PER_CHAT || '8', 10);
 const MAX_FILE_BYTES = parseInt(process.env.MAX_FILE_BYTES || String(60 * 1024), 10); // 60KB per file
+const ABSOLUTE_MAX_FILE_BYTES = parseInt(process.env.ABSOLUTE_MAX_FILE_BYTES || String(256 * 1024), 10); // hard cap when allowLargeFiles=true
 const MAX_HISTORY_MESSAGES = parseInt(process.env.MAX_HISTORY_MESSAGES || '24', 10); // hard cap on messages sent to the model
 const SUMMARY_TAIL_MESSAGES = parseInt(process.env.SUMMARY_TAIL_MESSAGES || '6', 10); // keep last N after summarizing
 
@@ -186,11 +187,12 @@ async function getRepoDefaultBranch(repoFullName) {
   return repoJson.default_branch || "main";
 }
 
-async function getFileContentFromGitHub(repoFullName, filePath, ref) {
+async function getFileContentFromGitHub(repoFullName, filePath, ref, options = {}) {
+  const maxBytes = Number.isFinite(options?.maxBytes) ? options.maxBytes : MAX_FILE_BYTES;
   if (!repoFullName) throw new Error("repoFullName is required");
   if (!isSafeRepoPath(filePath)) throw new Error("Invalid file path");
 
-  const key = `${repoFullName}@${ref || "default"}:${filePath}`;
+  const key = `${repoFullName}@${ref || "default"}:${filePath}:max=${maxBytes}`;
   const cached = fileContentMemCache.get(key);
   if (cached) return cached;
 
@@ -219,8 +221,8 @@ async function getFileContentFromGitHub(repoFullName, filePath, ref) {
     return result;
   }
 
-  if (buf.length > MAX_FILE_BYTES) {
-    const result = { skipped: true, reason: `File too large (${buf.length} bytes > ${MAX_FILE_BYTES})` };
+  if (buf.length > maxBytes) {
+    const result = { skipped: true, reason: `File too large (${buf.length} bytes > ${maxBytes})` };
     fileContentMemCache.set(key, result);
     return result;
   }
@@ -632,7 +634,7 @@ app.post("/api/pr/create", async (req, res) => {
 
 
 app.post("/api/chat", async (req, res) => {
-  const { conversationId, message, repoFullName, loadedFiles = [], modelOverride } =
+  const { conversationId, message, repoFullName, loadedFiles = [], modelOverride, allowLargeFiles = false } =
     req.body;
 
   // SSE headers should be set before streaming output
@@ -684,10 +686,11 @@ app.post("/api/chat", async (req, res) => {
 
     if (limitedFiles.length > 0 && repoFullName) {
       const ref = await getRepoDefaultBranch(repoFullName);
+      const perFileMaxBytes = allowLargeFiles ? ABSOLUTE_MAX_FILE_BYTES : MAX_FILE_BYTES;
 
       for (const f of limitedFiles) {
         try {
-          const r = await getFileContentFromGitHub(repoFullName, f, ref);
+          const r = await getFileContentFromGitHub(repoFullName, f, ref, { maxBytes: perFileMaxBytes });
           if (r.skipped) skippedFiles.push({ path: f, reason: r.reason || "Skipped" });
           else fileContents[f] = r.content;
         } catch (e) {
@@ -698,6 +701,14 @@ app.post("/api/chat", async (req, res) => {
       for (const f of limitedFiles) {
         skippedFiles.push({ path: f, reason: "No repo selected" });
       }
+    }
+
+    if (allowLargeFiles) {
+      res.write(`data: ${JSON.stringify({ type: 'warning', message: `Large files enabled. Per-file cap is ${ABSOLUTE_MAX_FILE_BYTES} bytes. This can increase token usage.` })}\n\n`);
+    }
+    if (skippedFiles.length > 0) {
+      const first = skippedFiles[0];
+      res.write(`data: ${JSON.stringify({ type: 'warning', message: `Skipped ${skippedFiles.length} file(s). First: ${first.path} (${first.reason})`, skippedFiles })}\n\n`);
     }
 
     // Compaction: summarize older messages when big, then enforce a hard cap

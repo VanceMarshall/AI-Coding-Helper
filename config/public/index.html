@@ -76,12 +76,23 @@
     .input-actions{position:absolute;right:8px;bottom:8px;display:flex;gap:6px}
     .input-actions button{padding:10px 16px;background:var(--accent);border:none;border-radius:6px;color:var(--bg);font-weight:600;cursor:pointer;font-size:14px}
     .input-actions button.attach{background:transparent;color:var(--text2);padding:10px}
+    .file-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+    .file-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:16px;font-size:12px;font-family:var(--mono)}
+    .file-chip button{background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:0 2px}
+    .file-chip button:hover{color:var(--red)}
+    .file-chip.badge{font-family:var(--sans);font-size:12px;color:var(--yellow);border-color:rgba(210,153,34,0.35);background:rgba(210,153,34,0.12)}
+    .modal-footer{padding:12px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .modal-footer button{padding:10px 14px;background:var(--accent);border:none;border-radius:8px;color:var(--bg);font-weight:600;cursor:pointer}
+    .modal-footer button:hover{opacity:0.95}
+    .checkbox{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);cursor:pointer;user-select:none}
+    .checkbox input{accent-color:var(--accent)}
     .modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px}
     .modal.active{display:flex}
     .modal-content{background:var(--bg2);border:1px solid var(--border);border-radius:12px;width:100%;max-width:600px;max-height:80vh;display:flex;flex-direction:column}
     .modal-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
     .modal-body{flex:1;overflow-y:auto;padding:16px 20px}
-    .file-tree{font-family:var(--mono);font-size:13px}
+        .file-search{width:100%;padding:12px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);margin-bottom:12px}
+.file-tree{font-family:var(--mono);font-size:13px}
     .file-item{padding:10px;border-radius:6px;cursor:pointer;display:flex;align-items:center;gap:8px}
     .file-item:hover{background:var(--bg4)}
     .file-item.selected{background:rgba(88,166,255,.15);color:var(--accent)}
@@ -132,7 +143,7 @@
     <div class="modal-content">
       <div class="modal-header"><h3>📁 Add files</h3><button class="modal-close" id="closeFileModal">×</button></div>
       <div class="modal-body"><input type="text" class="file-search" id="fileSearch" placeholder="Search..."><div class="file-tree" id="fileTree"></div></div>
-      <div class="modal-footer"><button id="confirmFiles">Add Selected</button></div>
+      <div class="modal-footer"><label class="checkbox"><input type="checkbox" id="allowLargeFiles"> Allow large files (higher cost)</label><button id="confirmFiles">Add Selected</button></div>
     </div>
   </div>
 
@@ -149,7 +160,7 @@ marked.setOptions({
   highlight:(c,l)=>l&&hljs.getLanguage(l)?hljs.highlight(c,{language:l}).value:hljs.highlightAuto(c).value,
   breaks:true
 });
-const state={conversationId:null,conversations:[],loadedFiles:[],repoFiles:[],selectedFiles:new Set(),config:null,mode:'auto',streaming:false};
+const state={conversationId:null,conversations:[],loadedFiles:[],repoFiles:[],selectedFiles:new Set(),config:null,mode:'auto',streaming:false,allowLargeFiles:false};
 const $=id=>document.getElementById(id);
 function showToast(m){const e=$('toast');e.textContent=m;e.style.display='block';setTimeout(()=>e.style.display='none',3000)}
 
@@ -228,7 +239,7 @@ async function loadConversation(id){
   state.conversationId=id;
   $('chatTitle').textContent=c.title||'Conversation';
   if(c.repoFullName){$('projectSelect').value=c.repoFullName;await loadRepoFiles()}
-  renderMessages(c.messages);renderConversations();
+  renderMessages(c.messages);renderFileChips();renderConversations();
 }
 
 function renderMessages(msgs){
@@ -396,7 +407,7 @@ async function loadRepoFiles(){
 }
 
 $('projectSelect').onchange=loadRepoFiles;
-$('attachBtn').onclick=()=>{if(!$('projectSelect').value){showToast('Select project first');return}renderFileTree();$('fileModal').classList.add('active')};
+$('attachBtn').onclick=()=>{if(!$('projectSelect').value){showToast('Select project first');return}renderFileTree();$('allowLargeFiles').checked=!!state.allowLargeFiles;$('fileModal').classList.add('active')};
 
 function renderFileTree(f=''){
   const fl=state.repoFiles.filter(x=>x.toLowerCase().includes(f.toLowerCase()));
@@ -410,12 +421,38 @@ function renderFileTree(f=''){
 
 $('fileSearch').oninput=e=>renderFileTree(e.target.value);
 $('closeFileModal').onclick=()=>$('fileModal').classList.remove('active');
-$('confirmFiles').onclick=()=>{state.loadedFiles=Array.from(state.selectedFiles);$('fileModal').classList.remove('active')};
+$('allowLargeFiles').onchange=(e)=>{state.allowLargeFiles=!!e.target.checked;if(state.allowLargeFiles){showToast('Large files ON: higher token usage');}else{showToast('Large files OFF');}renderFileChips();};
+$('confirmFiles').onclick=()=>{state.loadedFiles=Array.from(state.selectedFiles);state.allowLargeFiles=$('allowLargeFiles').checked;renderFileChips();$('fileModal').classList.remove('active');if(state.allowLargeFiles){showToast('Large files ON: higher token usage');}};
 
+
+function renderFileChips(){
+  const wrap=$('fileChips');
+  if(!wrap) return;
+  const parts=[];
+  if(state.allowLargeFiles){
+    parts.push(`<span class="file-chip badge" title="Large-file override enabled">⚠ Large files ON</span>`);
+  }
+  for(const path of (state.loadedFiles||[])){
+    parts.push(`<span class="file-chip" data-path="${escapeHtml(path)}">${escapeHtml(path)} <button title="Remove" type="button">×</button></span>`);
+  }
+  wrap.innerHTML=parts.join('');
+  wrap.querySelectorAll('.file-chip[data-path] button').forEach(btn=>{
+    btn.onclick=(ev)=>{
+      ev.stopPropagation();
+      const chip=btn.closest('.file-chip');
+      const p=chip?.getAttribute('data-path');
+      if(!p) return;
+      state.loadedFiles=(state.loadedFiles||[]).filter(x=>x!==p);
+      state.selectedFiles.delete(p);
+      renderFileChips();
+    };
+  });
+}
 async function sendMessage(){
   const m=$('messageInput').value.trim();if(!m||state.streaming)return;
   state.streaming=true;$('sendBtn').disabled=true;
   appendMessage('user',m);$('messageInput').value='';
+  if(state.allowLargeFiles && (state.loadedFiles||[]).length){showToast('Large files enabled: this may increase token usage');}
   const aMsg=appendMessage('assistant','');const cel=aMsg.querySelector('.msg-content');cel.innerHTML='<span class="streaming-dot"></span>';
   try{
 
@@ -428,6 +465,7 @@ async function sendMessage(){
         repoFullName: $('projectSelect').value,
         loadedFiles: state.loadedFiles,
         modelOverride: state.mode,
+        allowLargeFiles: state.allowLargeFiles,
       }),
     });
 
@@ -478,7 +516,7 @@ async function sendMessage(){
 }
 
 $('sendBtn').onclick=sendMessage;
-$('newChatBtn').onclick=()=>{state.conversationId=null;state.loadedFiles=[];renderMessages([]);$('chatTitle').textContent='New Chat'};
+$('newChatBtn').onclick=()=>{state.conversationId=null;state.loadedFiles=[];state.selectedFiles=new Set();renderMessages([]);renderFileChips();$('chatTitle').textContent='New Chat'};
 initModeToggle();
 loadConfig();loadProjects();loadConversations();
 </script>
