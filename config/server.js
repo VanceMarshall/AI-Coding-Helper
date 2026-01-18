@@ -35,6 +35,16 @@ const PROJECTS_TTL_MS = 1000 * 60 * 10; // 10 minutes
 const repoFileCachePath = path.join(DATA_DIR, "repoFileCache.json");
 const REPO_FILES_TTL_MS = 1000 * 60 * 30; // 30 minutes
 
+
+// Chat safety + cost controls
+const MAX_FILES_PER_CHAT = parseInt(process.env.MAX_FILES_PER_CHAT || '8', 10);
+const MAX_FILE_BYTES = parseInt(process.env.MAX_FILE_BYTES || String(60 * 1024), 10); // 60KB per file
+const MAX_HISTORY_MESSAGES = parseInt(process.env.MAX_HISTORY_MESSAGES || '24', 10); // hard cap on messages sent to the model
+const SUMMARY_TAIL_MESSAGES = parseInt(process.env.SUMMARY_TAIL_MESSAGES || '6', 10); // keep last N after summarizing
+
+// In-memory cache for GitHub file blobs (reduces GitHub API calls, not token usage)
+const fileContentMemCache = new Map();
+
 app.use(express.json({ limit: "10mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -59,44 +69,7 @@ async function writeJson(filePath, value) {
 async function loadConfig() {
   const defaults = await readJson(path.join(__dirname, "config", "models.json"), {});
   const runtime = await readJson(CONFIG_PATH, {});
-
-  // Deep-merge known nested sections so partial runtime overrides don't wipe defaults.
-  const merged = { ...defaults, ...runtime };
-  const defaultModels = defaults.models || {};
-  const runtimeModels = runtime.models || {};
-  const modelKeys = new Set([...Object.keys(defaultModels), ...Object.keys(runtimeModels)]);
-  const mergedModels = {};
-  for (const k of modelKeys) {
-    mergedModels[k] = { ...(defaultModels[k] || {}), ...(runtimeModels[k] || {}) };
-  }
-  merged.models = mergedModels;
-  merged.routing = { ...(defaults.routing || {}), ...(runtime.routing || {}) };
-  merged.routing.thresholds = {
-    ...((defaults.routing || {}).thresholds || {}),
-    ...((runtime.routing || {}).thresholds || {}),
-  };
-
-  return merged;
-}
-
-function resolveModelKey(modelOverride, routedModelKey, config) {
-  const models = config?.models || {};
-  const override = String(modelOverride || "").toLowerCase().trim();
-
-  // Frontend sends mode values: auto | fast | full.
-  // Only accept overrides that correspond to a configured model key.
-  if (override && override !== "auto" && models[override]) return override;
-
-  // Use router result when available.
-  if (routedModelKey && models[routedModelKey]) return routedModelKey;
-
-  // Last-resort fallbacks.
-  if (models.full) return "full";
-  if (models.fast) return "fast";
-  if (models.fallback) return "fallback";
-
-  const first = Object.keys(models)[0];
-  return first || null;
+  return { ...defaults, ...runtime };
 }
 
 /* ----------------------- github helpers ----------------------- */
@@ -136,38 +109,6 @@ async function githubFetchJson(url) {
   return await resp.json();
 }
 
-
-
-async function githubRequestJson(url, options = {}) {
-  const { key: token } = await getApiKeyWithFallback("github");
-  if (!token) throw new Error("GITHUB_TOKEN not configured");
-
-  const method = (options.method || "GET").toUpperCase();
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: "application/vnd.github+json",
-  };
-
-  let body = options.body;
-  if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
-    body = JSON.stringify(body);
-  }
-
-  const resp = await fetch(url, { method, headers, body });
-  if (!resp.ok) {
-    const txt = await resp.text().catch(() => "");
-    const msg = txt ? txt.slice(0, 800) : url;
-    const err = new Error(`GitHub ${resp.status}: ${msg}`);
-    err.status = resp.status;
-    throw err;
-  }
-
-  // Some GitHub endpoints can return 204 No Content.
-  if (resp.status == 204) return null;
-  return await resp.json();
-}
-
 async function githubFetchAllPages(urlBase) {
   const out = [];
   let page = 1;
@@ -190,52 +131,112 @@ async function githubFetchAllPages(urlBase) {
 
 
 
-function sanitizeRepoPath(inputPath) {
-  if (!inputPath || typeof inputPath !== "string") {
-    throw new Error("filePath is required");
-  }
-
-  let s = inputPath.trim();
-  // allow simple prefixes like "filepath: ..."
-  s = s.replace(/^\s*filepath\s*:\s*/i, "");
-  s = s.replace(/^\s*file\s*:\s*/i, "");
-
-  // normalize Windows separators and remove leading ./ or /
-  s = s.replace(/\\/g, "/");
-  while (s.startsWith("/")) s = s.slice(1);
-  while (s.startsWith("./")) s = s.slice(2);
-
-  const parts = s.split("/").filter(Boolean);
-  if (parts.length === 0) throw new Error("filePath is required");
-  if (parts.some((p) => p === "." || p === "..")) {
-    throw new Error("Invalid filePath (path traversal)");
-  }
-
-  const clean = parts.join("/");
-  if (clean.length > 400) throw new Error("filePath too long");
-  if (clean === ".git" || clean.startsWith(".git/") || clean.includes("/.git/")) {
-    throw new Error("Invalid filePath (.git not allowed)");
-  }
-
-  return clean;
+function encodeGitHubPath(p) {
+  return String(p)
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
 }
 
-function stripFilePathHeader(content) {
-  if (typeof content !== "string") return "";
+function isSafeRepoPath(p) {
+  if (!p || typeof p !== "string") return false;
+  if (p.startsWith("/")) return false;
+  if (p.includes("\\")) return false;
+  if (p.includes("\u0000")) return false;
 
-  // Normalize newlines, then drop a first-line filepath header if present.
-  const lines = content.replace(/\r?\n/g, "\n").split("\n");
-  if (lines.length === 0) return "";
+  const parts = p.split("/");
+  // Disallow empty segments and path traversal.
+  if (parts.some((seg) => !seg || seg === "..")) return false;
+  return true;
+}
 
-  const first = lines[0] || "";
-  const headerRe = /^\s*(?:\/\/|#|;|--)?\s*filepath\s*:/i;
-  if (headerRe.test(first)) {
-    lines.shift();
-    if (lines[0] === "") lines.shift();
+async function githubRequest(url, { method = "GET", body } = {}) {
+  const { key: token } = await getApiKeyWithFallback("github");
+  if (!token) throw new Error("GitHub token missing. Set GITHUB_TOKEN in Railway variables.");
+
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+  };
+
+  const init = { method, headers };
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(body);
   }
 
-  return lines.join("\n");
+  return fetch(url, init);
 }
+
+async function githubJsonAllow404(url) {
+  const resp = await githubRequest(url);
+  if (resp.status === 404) return null;
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => "");
+    throw new Error(`GitHub ${resp.status}: ${txt || url}`);
+  }
+  return resp.json();
+}
+
+async function getRepoDefaultBranch(repoFullName) {
+  const cache = await readRepoFileCache();
+  const cached = cache[repoFullName];
+  if (cached && cached.branch) return cached.branch;
+  const repoJson = await githubFetchJson(`https://api.github.com/repos/${repoFullName}`);
+  return repoJson.default_branch || "main";
+}
+
+async function getFileContentFromGitHub(repoFullName, filePath, ref) {
+  if (!repoFullName) throw new Error("repoFullName is required");
+  if (!isSafeRepoPath(filePath)) throw new Error("Invalid file path");
+
+  const key = `${repoFullName}@${ref || "default"}:${filePath}`;
+  const cached = fileContentMemCache.get(key);
+  if (cached) return cached;
+
+  const url = `https://api.github.com/repos/${repoFullName}/contents/${encodeGitHubPath(filePath)}${ref ? `?ref=${encodeURIComponent(ref)}` : ""}`;
+  const json = await githubFetchJson(url);
+
+  if (Array.isArray(json)) {
+    const result = { skipped: true, reason: "Path is a directory" };
+    fileContentMemCache.set(key, result);
+    return result;
+  }
+
+  let buf = null;
+  if (json && json.encoding === "base64" && typeof json.content === "string") {
+    buf = Buffer.from(String(json.content).replace(/\n/g, ""), "base64");
+  } else if (json && json.sha) {
+    const blob = await githubFetchJson(`https://api.github.com/repos/${repoFullName}/git/blobs/${json.sha}`);
+    if (blob && typeof blob.content === "string") {
+      buf = Buffer.from(String(blob.content).replace(/\n/g, ""), "base64");
+    }
+  }
+
+  if (!buf) {
+    const result = { skipped: true, reason: "No file content returned by GitHub API" };
+    fileContentMemCache.set(key, result);
+    return result;
+  }
+
+  if (buf.length > MAX_FILE_BYTES) {
+    const result = { skipped: true, reason: `File too large (${buf.length} bytes > ${MAX_FILE_BYTES})` };
+    fileContentMemCache.set(key, result);
+    return result;
+  }
+
+  const text = buf.toString("utf8");
+  if (text.includes("\u0000")) {
+    const result = { skipped: true, reason: "Binary file" };
+    fileContentMemCache.set(key, result);
+    return result;
+  }
+
+  const result = { skipped: false, content: text };
+  fileContentMemCache.set(key, result);
+  return result;
+}
+
 
 function mergePinnedProjects(pinnedNames, projects) {
   const byFullName = new Map();
@@ -280,69 +281,6 @@ async function fetchRepoFileListFromGitHub(repoFullName) {
   return { branch, files };
 }
 
-// --- GitHub file content (explicit selection only) ---
-// Safety: we only fetch the contents of files the user explicitly selected in the UI.
-// We never send the whole repo tree to the model.
-const MAX_FILE_BYTES = Number(process.env.MAX_FILE_BYTES || 250000); // ~250 KB
-const MAX_FILES_PER_CHAT = Number(process.env.MAX_FILES_PER_CHAT || 20);
-
-function encodeGitHubPath(p) {
-  return String(p).split('/').map(encodeURIComponent).join('/');
-}
-
-async function githubFetchRawText(url) {
-  const { key: token } = await getApiKeyWithFallback('github');
-  if (!token) throw new Error('GITHUB_TOKEN not configured');
-
-  const resp = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github.raw',
-    },
-  });
-
-  if (!resp.ok) {
-    const txt = await resp.text().catch(() => '');
-    throw new Error(`GitHub ${resp.status}: ${txt || url}`);
-  }
-
-  // NOTE: GitHub returns raw bytes; we treat it as UTF-8 text.
-  return await resp.text();
-}
-
-async function getRepoDefaultBranch(repoFullName) {
-  try {
-    const cache = await readRepoFileCache();
-    const cached = cache?.[repoFullName];
-    if (cached?.branch) return cached.branch;
-  } catch {}
-
-  const repoJson = await githubFetchJson(`https://api.github.com/repos/${repoFullName}`);
-  return repoJson?.default_branch || 'main';
-}
-
-async function getFileContentFromGitHub(repoFullName, filePath) {
-  if (!repoFullName) throw new Error('No repo selected');
-  const cleanPath = sanitizeRepoPath(filePath);
-
-  const branch = await getRepoDefaultBranch(repoFullName);
-  const url = `https://api.github.com/repos/${repoFullName}/contents/${encodeGitHubPath(cleanPath)}?ref=${encodeURIComponent(branch)}`;
-
-  const content = await githubFetchRawText(url);
-
-  // Guard against binary files
-  if (content && content.indexOf('\u0000') !== -1) {
-    throw new Error(`File appears to be binary: ${cleanPath}`);
-  }
-
-  const bytes = Buffer.byteLength(content || '', 'utf8');
-  if (bytes > MAX_FILE_BYTES) {
-    throw new Error(`File too large (${bytes} bytes). Max is ${MAX_FILE_BYTES} bytes.`);
-  }
-
-  return content;
-}
-
 async function readRepoFileCache() {
   return await readJson(repoFileCachePath, {});
 }
@@ -354,6 +292,33 @@ async function writeRepoFileCache(cache) {
 /* ----------------------- prompt packing ----------------------- */
 
 // Ensure stable ordering for OpenAI Prompt Caching
+
+function estimateTokens(text) {
+  return Math.ceil(String(text || '').length / 4);
+}
+
+function resolveModelKey(modelOverride, routedModelKey, config) {
+  const override = (modelOverride || '').toString().trim().toLowerCase();
+  if (!override || override === 'auto') return routedModelKey;
+  if (override === 'fast' || override === 'full') return override;
+  if (config?.models && config.models[override]) return override;
+  return routedModelKey;
+}
+
+function compactMessagesForModel(messages, maxMessages) {
+  if (!Array.isArray(messages)) return [];
+  if (messages.length <= maxMessages) return messages;
+  const out = [];
+  // Preserve the leading conversation summary system message, if present.
+  if (messages[0]?.role === 'system' && typeof messages[0].content === 'string' && messages[0].content.startsWith('Conversation Summary:')) {
+    out.push(messages[0]);
+  }
+  const remainingSlots = Math.max(0, maxMessages - out.length);
+  if (remainingSlots === 0) return out;
+  out.push(...messages.slice(-remainingSlots));
+  return out;
+}
+
 function prepareMessagesForModel(messages, options = {}) {
   const { systemPrompt, fileContents = {} } = options;
 
@@ -546,163 +511,125 @@ app.get("/api/projects/:owner/:repo/files", async (req, res) => {
   }
 });
 
-// Fetch the CONTENTS of a single repo file (for UI preview / "open file" flows).
-// This is still explicit-selection only; we never enumerate or inject the full repo.
-app.get("/api/projects/:owner/:repo/file", async (req, res) => {
-  try {
-    const { owner, repo } = req.params;
-    const repoFullName = `${owner}/${repo}`;
-    const filePath = String(req.query.path || '').trim();
-    if (!filePath) return res.status(400).json({ error: 'path is required' });
-
-    const cleanPath = sanitizeRepoPath(filePath);
-    const content = await getFileContentFromGitHub(repoFullName, cleanPath);
-    res.json({ repo: repoFullName, path: cleanPath, content });
-  } catch (e) {
-    console.error('GET /api/projects/:owner/:repo/file error:', e);
-    res.status(500).json({ error: e.message || 'Failed to load file' });
-  }
-});
-
-
 app.get("/api/conversations", async (req, res) => {
   res.json(await readJson(conversationsPath, []));
 });
-
 app.patch("/api/conversations/:id", async (req, res) => {
   try {
-    const id = req.params.id;
-    const { title } = req.body || {};
-    if (!title || typeof title !== "string" || !title.trim()) {
-      return res.status(400).json({ error: "title is required" });
+    const conversations = await readJson(conversationsPath, []);
+    const convo = conversations.find((c) => c.id === req.params.id);
+
+    if (!convo) {
+      return res.status(404).json({ error: "Conversation not found" });
     }
 
-    const conversations = await readJson(conversationsPath, []);
-    const convo = conversations.find((c) => c.id === id);
-    if (!convo) return res.status(404).json({ error: "Conversation not found" });
-
-    convo.title = title.trim().slice(0, 80);
+    const title = (req.body?.title || "").toString().trim();
+    convo.title = title.slice(0, 120);
     convo.updatedAt = new Date().toISOString();
+
     await writeJson(conversationsPath, conversations);
-    res.json({ ok: true });
+    res.json(convo);
   } catch (e) {
-    console.error("PATCH /api/conversations/:id error:", e);
-    res.status(500).json({ error: "Failed to rename conversation" });
+    res.status(500).json({ error: e.message || "Failed to update conversation" });
   }
 });
 
-
-
-// Create a DRAFT PR from a single full-file code block. Never commits to the default branch.
 app.post("/api/pr/create", async (req, res) => {
   try {
-    const { repoFullName, conversationId, filePath, content, title } = req.body || {};
+    const { repoFullName, conversationId, filePath, content, title, body, draft } =
+      req.body || {};
 
     if (!repoFullName || typeof repoFullName !== "string") {
       return res.status(400).json({ error: "repoFullName is required" });
     }
-    if (!filePath || typeof filePath !== "string") {
-      return res.status(400).json({ error: "filePath is required" });
+    if (!filePath || typeof filePath !== "string" || !isSafeRepoPath(filePath)) {
+      return res.status(400).json({ error: "A valid filePath is required" });
     }
-
-    const cleanPath = sanitizeRepoPath(filePath);
-    const cleanContent = stripFilePathHeader(typeof content === "string" ? content : "");
-
-    if (!cleanContent.trim()) {
+    if (typeof content !== "string") {
       return res.status(400).json({ error: "content is required" });
     }
-    if (cleanContent.length > 1_500_000) {
-      return res.status(400).json({ error: "content too large" });
-    }
 
+    // Get repo info
     const repo = await githubFetchJson(`https://api.github.com/repos/${repoFullName}`);
-    const baseBranch = repo.default_branch;
-    if (!baseBranch) throw new Error("Could not determine default_branch");
+    const base = repo.default_branch || "main";
 
+    // Create a branch from base
     const baseRef = await githubFetchJson(
-      `https://api.github.com/repos/${repoFullName}/git/ref/heads/${baseBranch}`
+      `https://api.github.com/repos/${repoFullName}/git/ref/heads/${encodeURIComponent(base)}`
     );
-    const baseSha = baseRef?.object?.sha;
-    if (!baseSha) throw new Error("Could not read base branch ref sha");
 
-    const safeConvo = String(conversationId || "new")
-      .toLowerCase()
-      .replace(/[^a-z0-9_-]/g, "")
-      .slice(0, 32);
+    const safeId = (conversationId || "chat")
+      .toString()
+      .replace(/[^a-zA-Z0-9\-_]/g, "")
+      .slice(0, 24);
+    const branch = `ai/${safeId}-${Date.now().toString(36)}`;
 
-    // Create a branch name and retry if collision
-    let branch = `ai/${safeConvo}-${Date.now().toString(36)}`;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        await githubRequestJson(`https://api.github.com/repos/${repoFullName}/git/refs`, {
-          method: "POST",
-          body: { ref: `refs/heads/${branch}`, sha: baseSha },
-        });
-        break;
-      } catch (e) {
-        if (attempt === 2 || e?.status !== 422) throw e;
-        branch = `ai/${safeConvo}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-      }
+    const refResp = await githubRequest(
+      `https://api.github.com/repos/${repoFullName}/git/refs`,
+      { method: "POST", body: { ref: `refs/heads/${branch}`, sha: baseRef.object.sha } }
+    );
+    if (!refResp.ok) {
+      const txt = await refResp.text().catch(() => "");
+      return res
+        .status(refResp.status)
+        .json({ error: `Failed to create branch: ${txt || refResp.status}` });
     }
 
-    // Build a single commit with Git Data API (blob -> tree -> commit -> ref)
-    const baseCommit = await githubFetchJson(
-      `https://api.github.com/repos/${repoFullName}/git/commits/${baseSha}`
+    // Update the file on the new branch via the contents API
+    const existing = await githubJsonAllow404(
+      `https://api.github.com/repos/${repoFullName}/contents/${encodeGitHubPath(filePath)}?ref=${encodeURIComponent(base)}`
     );
-    const baseTreeSha = baseCommit?.tree?.sha;
-    if (!baseTreeSha) throw new Error("Could not read base tree sha");
 
-    const blob = await githubRequestJson(
-      `https://api.github.com/repos/${repoFullName}/git/blobs`,
-      { method: "POST", body: { content: cleanContent, encoding: "utf-8" } }
+    const putBody = {
+      message: `AI update: ${filePath}`,
+      content: Buffer.from(content, "utf8").toString("base64"),
+      branch,
+    };
+    if (existing?.sha) putBody.sha = existing.sha;
+
+    const putResp = await githubRequest(
+      `https://api.github.com/repos/${repoFullName}/contents/${encodeGitHubPath(filePath)}`,
+      { method: "PUT", body: putBody }
     );
-    if (!blob?.sha) throw new Error("Failed to create blob");
+    if (!putResp.ok) {
+      const txt = await putResp.text().catch(() => "");
+      return res
+        .status(putResp.status)
+        .json({ error: `Failed to commit file: ${txt || putResp.status}` });
+    }
 
-    const newTree = await githubRequestJson(
-      `https://api.github.com/repos/${repoFullName}/git/trees`,
+    // Create a (draft) PR
+    const prTitle = (title || `AI update: ${filePath}`).toString().slice(0, 140);
+    const prBody = (body || "").toString();
+
+    const prResp = await githubRequest(
+      `https://api.github.com/repos/${repoFullName}/pulls`,
       {
         method: "POST",
         body: {
-          base_tree: baseTreeSha,
-          tree: [{ path: cleanPath, mode: "100644", type: "blob", sha: blob.sha }],
+          title: prTitle,
+          head: branch,
+          base,
+          body: prBody,
+          draft: draft !== false,
         },
       }
     );
-    if (!newTree?.sha) throw new Error("Failed to create tree");
 
-    const commitMessage = (typeof title === "string" && title.trim())
-      ? title.trim().slice(0, 120)
-      : `AI patch: ${cleanPath}`;
+    if (!prResp.ok) {
+      const txt = await prResp.text().catch(() => "");
+      return res
+        .status(prResp.status)
+        .json({ error: `Failed to create PR: ${txt || prResp.status}` });
+    }
 
-    const commit = await githubRequestJson(
-      `https://api.github.com/repos/${repoFullName}/git/commits`,
-      { method: "POST", body: { message: commitMessage, tree: newTree.sha, parents: [baseSha] } }
-    );
-    if (!commit?.sha) throw new Error("Failed to create commit");
-
-    await githubRequestJson(
-      `https://api.github.com/repos/${repoFullName}/git/refs/heads/${branch}`,
-      { method: "PATCH", body: { sha: commit.sha, force: false } }
-    );
-
-    const pr = await githubRequestJson(`https://api.github.com/repos/${repoFullName}/pulls`, {
-      method: "POST",
-      body: {
-        title: commitMessage,
-        head: branch,
-        base: baseBranch,
-        body: "Created by AI Code Helper",
-        draft: true,
-      },
-    });
-    if (!pr?.html_url) throw new Error("Failed to create PR");
-
-    res.json({ prUrl: pr.html_url, branch, base: baseBranch, prNumber: pr.number });
+    const pr = await prResp.json();
+    res.json({ url: pr.html_url, branch, base });
   } catch (e) {
-    console.error("POST /api/pr/create error:", e);
-    res.status(500).json({ error: e.message || "Create PR failed" });
+    res.status(500).json({ error: e.message || "Failed to create PR" });
   }
 });
+
 
 app.post("/api/chat", async (req, res) => {
   const { conversationId, message, repoFullName, loadedFiles = [], modelOverride } =
@@ -721,67 +648,83 @@ app.post("/api/chat", async (req, res) => {
     if (!convo) {
       convo = {
         id: Date.now().toString(36),
-        title: (typeof message === 'string' && message.trim() ? message.trim().slice(0, 60) : 'Chat'),
-        repoFullName: repoFullName || '',
         messages: [],
         createdAt: new Date().toISOString(),
       };
       conversations.push(convo);
     }
 
-    if (repoFullName) convo.repoFullName = repoFullName;
 
     // Smart Routing
-    const route = routeMessage(message, config, loadedFiles.length > 0);
+    const route = routeMessage(message, config, Array.isArray(loadedFiles) && loadedFiles.length > 0);
     const modelKey = resolveModelKey(modelOverride, route.modelKey, config);
-    const modelConfig = modelKey ? (config.models || {})[modelKey] : null;
+    const modelConfig = config.models[modelKey];
+
     if (!modelConfig) {
-      throw new Error(
-        `No model configured for key '${modelKey || "(none)"}'. Check DATA_DIR/models.json or config/config/models.json.`
-      );
+      throw new Error(`Unknown model key: ${modelKey}`);
     }
 
-    // IMPORTANT: fileContents must only include explicitly selected files.
-    // Your repo file LIST is separate and should never be injected into prompts.
+    // Persist repo selection on the conversation (helps follow-up chats)
+    if (repoFullName) convo.repoFullName = repoFullName;
+
+    // Give new conversations a default title from the first user message
+    if (!convo.title && typeof message === "string") {
+      const t = message.trim().replace(/\s+/g, " ").slice(0, 60);
+      convo.title = t || "New Chat";
+    }
+
+    // Load selected file contents from GitHub (explicit selection only)
     const fileContents = {};
-    const selectedFiles = Array.isArray(loadedFiles)
-      ? loadedFiles.filter((x) => typeof x === "string" && x.trim())
+    const skippedFiles = [];
+    const safeLoadedFiles = Array.isArray(loadedFiles)
+      ? loadedFiles.filter((f) => typeof f === "string" && f.trim())
       : [];
 
-    // Deterministic order + safety caps
-    const unique = [];
-    const seen = new Set();
-    for (const f of selectedFiles) {
-      const k = f.trim();
-      if (seen.has(k)) continue;
-      seen.add(k);
-      unique.push(k);
-    }
-    unique.sort();
+    const limitedFiles = safeLoadedFiles.slice(0, MAX_FILES_PER_CHAT);
 
-    const limited = unique.slice(0, MAX_FILES_PER_CHAT);
-    for (const f of limited) {
-      try {
-        fileContents[f] = await getFileContentFromGitHub(repoFullName, f);
-      } catch (e) {
-        // We skip unreadable/too-large files rather than failing the whole chat.
-        // (The user can select fewer files or smaller files.)
-        console.warn(`Skipping file '${f}':`, e?.message || e);
+    if (limitedFiles.length > 0 && repoFullName) {
+      const ref = await getRepoDefaultBranch(repoFullName);
+
+      for (const f of limitedFiles) {
+        try {
+          const r = await getFileContentFromGitHub(repoFullName, f, ref);
+          if (r.skipped) skippedFiles.push({ path: f, reason: r.reason || "Skipped" });
+          else fileContents[f] = r.content;
+        } catch (e) {
+          skippedFiles.push({ path: f, reason: e.message || "Failed to read file" });
+        }
+      }
+    } else if (limitedFiles.length > 0 && !repoFullName) {
+      for (const f of limitedFiles) {
+        skippedFiles.push({ path: f, reason: "No repo selected" });
       }
     }
 
-    // Compaction: If history is too long, summarize it
-    const summaryThreshold = modelConfig?.summarizationThreshold ?? config.models?.full?.summarizationThreshold ?? 40000;
-    const currentEstTokens = JSON.stringify(convo.messages).length / 4;
+    // Compaction: summarize older messages when big, then enforce a hard cap
+    const summaryThreshold = Number.isFinite(modelConfig.summarizationThreshold)
+      ? modelConfig.summarizationThreshold
+      : 40000;
 
-    if (currentEstTokens > summaryThreshold) {
+    const currentEstTokens = estimateTokens(JSON.stringify(convo.messages));
+
+    if (currentEstTokens > summaryThreshold && convo.messages.length > SUMMARY_TAIL_MESSAGES * 2) {
       const summary = await getHistorySummary(convo.messages, config);
       if (summary) {
-        convo.messages = [
-          { role: "system", content: "Conversation Summary: " + summary },
-          ...convo.messages.slice(-6),
-        ];
+        const tail = convo.messages.slice(-SUMMARY_TAIL_MESSAGES * 2);
+        convo.messages = [{ role: "system", content: "Conversation Summary: " + summary }, ...tail];
       }
+    }
+
+    // Always cap the number of messages we keep to control token usage.
+    if (convo.messages.length > MAX_HISTORY_MESSAGES) {
+      const hasSummary =
+        convo.messages[0]?.role === "system" &&
+        typeof convo.messages[0]?.content === "string" &&
+        convo.messages[0].content.startsWith("Conversation Summary:");
+
+      const keep = MAX_HISTORY_MESSAGES - (hasSummary ? 1 : 0);
+      const tail = convo.messages.slice(-keep);
+      convo.messages = hasSummary ? [convo.messages[0], ...tail] : tail;
     }
 
     convo.messages.push({
@@ -799,7 +742,7 @@ app.post("/api/chat", async (req, res) => {
       `data: ${JSON.stringify({
         type: "start",
         conversationId: convo.id,
-        model: modelConfig?.displayName || modelKey || "(unknown)",
+        model: modelConfig.displayName,
       })}\n\n`
     );
 
@@ -826,7 +769,7 @@ app.post("/api/chat", async (req, res) => {
       role: "assistant",
       content: fullResponse,
       timestamp: new Date().toISOString(),
-      model: modelConfig?.displayName || modelKey || "(unknown)",
+      model: modelConfig.displayName,
     });
     convo.updatedAt = new Date().toISOString();
     await writeJson(conversationsPath, conversations);
