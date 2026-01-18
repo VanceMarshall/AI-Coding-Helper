@@ -235,6 +235,19 @@ ${textToSummarize}`;
 
 /* ----------------------- endpoints ----------------------- */
 
+// Frontend expects this endpoint to exist and return JSON.
+// If it's missing, the browser receives HTML (often index.html) and JSON parsing fails
+// with: "Unexpected token '<'".
+app.get("/api/config", async (req, res) => {
+  try {
+    const cfg = await loadConfig();
+    res.json(cfg);
+  } catch (e) {
+    console.error("GET /api/config error:", e);
+    res.status(500).json({ error: "Failed to load config" });
+  }
+});
+
 app.get("/api/projects", async (req, res) => {
   try {
     const refresh = String(req.query.refresh || "").toLowerCase() === "true";
