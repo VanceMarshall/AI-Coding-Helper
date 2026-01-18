@@ -59,7 +59,44 @@ async function writeJson(filePath, value) {
 async function loadConfig() {
   const defaults = await readJson(path.join(__dirname, "config", "models.json"), {});
   const runtime = await readJson(CONFIG_PATH, {});
-  return { ...defaults, ...runtime };
+
+  // Deep-merge known nested sections so partial runtime overrides don't wipe defaults.
+  const merged = { ...defaults, ...runtime };
+  const defaultModels = defaults.models || {};
+  const runtimeModels = runtime.models || {};
+  const modelKeys = new Set([...Object.keys(defaultModels), ...Object.keys(runtimeModels)]);
+  const mergedModels = {};
+  for (const k of modelKeys) {
+    mergedModels[k] = { ...(defaultModels[k] || {}), ...(runtimeModels[k] || {}) };
+  }
+  merged.models = mergedModels;
+  merged.routing = { ...(defaults.routing || {}), ...(runtime.routing || {}) };
+  merged.routing.thresholds = {
+    ...((defaults.routing || {}).thresholds || {}),
+    ...((runtime.routing || {}).thresholds || {}),
+  };
+
+  return merged;
+}
+
+function resolveModelKey(modelOverride, routedModelKey, config) {
+  const models = config?.models || {};
+  const override = String(modelOverride || "").toLowerCase().trim();
+
+  // Frontend sends mode values: auto | fast | full.
+  // Only accept overrides that correspond to a configured model key.
+  if (override && override !== "auto" && models[override]) return override;
+
+  // Use router result when available.
+  if (routedModelKey && models[routedModelKey]) return routedModelKey;
+
+  // Last-resort fallbacks.
+  if (models.full) return "full";
+  if (models.fast) return "fast";
+  if (models.fallback) return "fallback";
+
+  const first = Object.keys(models)[0];
+  return first || null;
 }
 
 /* ----------------------- github helpers ----------------------- */
@@ -369,6 +406,28 @@ app.get("/api/conversations", async (req, res) => {
   res.json(await readJson(conversationsPath, []));
 });
 
+app.patch("/api/conversations/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { title } = req.body || {};
+    if (!title || typeof title !== "string" || !title.trim()) {
+      return res.status(400).json({ error: "title is required" });
+    }
+
+    const conversations = await readJson(conversationsPath, []);
+    const convo = conversations.find((c) => c.id === id);
+    if (!convo) return res.status(404).json({ error: "Conversation not found" });
+
+    convo.title = title.trim().slice(0, 80);
+    convo.updatedAt = new Date().toISOString();
+    await writeJson(conversationsPath, conversations);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("PATCH /api/conversations/:id error:", e);
+    res.status(500).json({ error: "Failed to rename conversation" });
+  }
+});
+
 app.post("/api/chat", async (req, res) => {
   const { conversationId, message, repoFullName, loadedFiles = [], modelOverride } =
     req.body;
@@ -386,16 +445,25 @@ app.post("/api/chat", async (req, res) => {
     if (!convo) {
       convo = {
         id: Date.now().toString(36),
+        title: (typeof message === 'string' && message.trim() ? message.trim().slice(0, 60) : 'Chat'),
+        repoFullName: repoFullName || '',
         messages: [],
         createdAt: new Date().toISOString(),
       };
       conversations.push(convo);
     }
 
+    if (repoFullName) convo.repoFullName = repoFullName;
+
     // Smart Routing
     const route = routeMessage(message, config, loadedFiles.length > 0);
-    const modelKey = modelOverride || route.modelKey;
-    const modelConfig = config.models[modelKey];
+    const modelKey = resolveModelKey(modelOverride, route.modelKey, config);
+    const modelConfig = modelKey ? (config.models || {})[modelKey] : null;
+    if (!modelConfig) {
+      throw new Error(
+        `No model configured for key '${modelKey || "(none)"}'. Check DATA_DIR/models.json or config/config/models.json.`
+      );
+    }
 
     // IMPORTANT: fileContents must only include explicitly selected files.
     // Your repo file LIST is separate and should never be injected into prompts.
@@ -406,7 +474,7 @@ app.post("/api/chat", async (req, res) => {
     }
 
     // Compaction: If history is too long, summarize it
-    const summaryThreshold = modelConfig.summarizationThreshold || 40000;
+    const summaryThreshold = modelConfig?.summarizationThreshold ?? config.models?.full?.summarizationThreshold ?? 40000;
     const currentEstTokens = JSON.stringify(convo.messages).length / 4;
 
     if (currentEstTokens > summaryThreshold) {
@@ -434,7 +502,7 @@ app.post("/api/chat", async (req, res) => {
       `data: ${JSON.stringify({
         type: "start",
         conversationId: convo.id,
-        model: modelConfig.displayName,
+        model: modelConfig?.displayName || modelKey || "(unknown)",
       })}\n\n`
     );
 
@@ -461,7 +529,7 @@ app.post("/api/chat", async (req, res) => {
       role: "assistant",
       content: fullResponse,
       timestamp: new Date().toISOString(),
-      model: modelConfig.displayName,
+      model: modelConfig?.displayName || modelKey || "(unknown)",
     });
     convo.updatedAt = new Date().toISOString();
     await writeJson(conversationsPath, conversations);

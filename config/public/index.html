@@ -162,7 +162,39 @@ async function loadConfig(){
     console.warn('Failed to load /api/config:',e);
     state.config=null;
   }
+  updateModelIndicator();
 }
+
+function updateModelIndicator(forceText){
+  const el=$('modelIndicator');
+  if(!el) return;
+  const txt=(forceText!=null && String(forceText).trim()) ? String(forceText).trim() : null;
+  if(txt){
+    el.innerHTML=`<span class="dot"></span>${escapeHtml(txt)}`;
+    return;
+  }
+  const models=(state.config && state.config.models) ? state.config.models : {};
+  let label='Ready';
+  if(state.mode==='auto'){
+    label='Auto';
+  }else if(models[state.mode] && models[state.mode].displayName){
+    label=models[state.mode].displayName;
+  }else if(state.mode){
+    label=state.mode;
+  }
+  el.innerHTML=`<span class="dot"></span>${escapeHtml(label)}`;
+}
+
+function setMode(mode){
+  const m=String(mode||'auto').toLowerCase();
+  state.mode=(m==='fast' || m==='full' || m==='auto') ? m : 'auto';
+  document.querySelectorAll('#modelToggle button').forEach(btn=>{
+    const on=btn.dataset.mode===state.mode;
+    btn.classList.toggle('active', on);
+  });
+  updateModelIndicator();
+}
+
 async function loadProjects(){try{const r=await(await fetch('/api/projects')).json();$('projectSelect').innerHTML='<option value="">No project</option>'+r.map(x=>`<option value="${x.fullName}">${x.fullName}</option>`).join('')}catch(e){}}
 async function loadConversations(){state.conversations=await(await fetch('/api/conversations')).json();renderConversations()}
 
@@ -405,7 +437,7 @@ async function sendMessage(){
     while(true){const{done,value}=await reader.read();if(done)break;
       for(const line of dec.decode(value).split('\n')){if(!line.startsWith('data: '))continue;
         try{const d=JSON.parse(line.slice(6));
-          if(d.type==='start'){state.conversationId=d.conversationId;$('modelIndicator').innerHTML=`<span class="dot"></span>${d.model}`}
+          if(d.type==='start'){state.conversationId=d.conversationId;updateModelIndicator((state.mode==='auto'?'Auto → ':'')+(d.model||''))}
           else if(d.type==='text'){full+=d.text;cel.innerHTML=marked.parse(full);$('messages').scrollTop=$('messages').scrollHeight}
           else if(d.type==='done'){loadConversations()}
         }catch(e){}}
@@ -419,6 +451,12 @@ async function sendMessage(){
 
 $('sendBtn').onclick=sendMessage;
 $('newChatBtn').onclick=()=>{state.conversationId=null;state.loadedFiles=[];renderMessages([]);$('chatTitle').textContent='New Chat'};
+
+document.querySelectorAll('#modelToggle button').forEach(btn=>{
+  btn.onclick=()=>setMode(btn.dataset.mode);
+});
+setMode(state.mode);
+
 loadConfig();loadProjects();loadConversations();
 </script>
 </body>
