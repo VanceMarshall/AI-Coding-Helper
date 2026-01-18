@@ -136,6 +136,38 @@ async function githubFetchJson(url) {
   return await resp.json();
 }
 
+
+
+async function githubRequestJson(url, options = {}) {
+  const { key: token } = await getApiKeyWithFallback("github");
+  if (!token) throw new Error("GITHUB_TOKEN not configured");
+
+  const method = (options.method || "GET").toUpperCase();
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+  };
+
+  let body = options.body;
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(body);
+  }
+
+  const resp = await fetch(url, { method, headers, body });
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => "");
+    const msg = txt ? txt.slice(0, 800) : url;
+    const err = new Error(`GitHub ${resp.status}: ${msg}`);
+    err.status = resp.status;
+    throw err;
+  }
+
+  // Some GitHub endpoints can return 204 No Content.
+  if (resp.status == 204) return null;
+  return await resp.json();
+}
+
 async function githubFetchAllPages(urlBase) {
   const out = [];
   let page = 1;
@@ -154,6 +186,55 @@ async function githubFetchAllPages(urlBase) {
     if (page > 50) break; // safety
   }
   return out;
+}
+
+
+
+function sanitizeRepoPath(inputPath) {
+  if (!inputPath || typeof inputPath !== "string") {
+    throw new Error("filePath is required");
+  }
+
+  let s = inputPath.trim();
+  // allow simple prefixes like "filepath: ..."
+  s = s.replace(/^\s*filepath\s*:\s*/i, "");
+  s = s.replace(/^\s*file\s*:\s*/i, "");
+
+  // normalize Windows separators and remove leading ./ or /
+  s = s.replace(/\\/g, "/");
+  while (s.startsWith("/")) s = s.slice(1);
+  while (s.startsWith("./")) s = s.slice(2);
+
+  const parts = s.split("/").filter(Boolean);
+  if (parts.length === 0) throw new Error("filePath is required");
+  if (parts.some((p) => p === "." || p === "..")) {
+    throw new Error("Invalid filePath (path traversal)");
+  }
+
+  const clean = parts.join("/");
+  if (clean.length > 400) throw new Error("filePath too long");
+  if (clean === ".git" || clean.startsWith(".git/") || clean.includes("/.git/")) {
+    throw new Error("Invalid filePath (.git not allowed)");
+  }
+
+  return clean;
+}
+
+function stripFilePathHeader(content) {
+  if (typeof content !== "string") return "";
+
+  // Normalize newlines, then drop a first-line filepath header if present.
+  const lines = content.replace(/\r?\n/g, "\n").split("\n");
+  if (lines.length === 0) return "";
+
+  const first = lines[0] || "";
+  const headerRe = /^\s*(?:\/\/|#|;|--)?\s*filepath\s*:/i;
+  if (headerRe.test(first)) {
+    lines.shift();
+    if (lines[0] === "") lines.shift();
+  }
+
+  return lines.join("\n");
 }
 
 function mergePinnedProjects(pinnedNames, projects) {
@@ -197,6 +278,69 @@ async function fetchRepoFileListFromGitHub(repoFullName) {
     .map((n) => n.path);
 
   return { branch, files };
+}
+
+// --- GitHub file content (explicit selection only) ---
+// Safety: we only fetch the contents of files the user explicitly selected in the UI.
+// We never send the whole repo tree to the model.
+const MAX_FILE_BYTES = Number(process.env.MAX_FILE_BYTES || 250000); // ~250 KB
+const MAX_FILES_PER_CHAT = Number(process.env.MAX_FILES_PER_CHAT || 20);
+
+function encodeGitHubPath(p) {
+  return String(p).split('/').map(encodeURIComponent).join('/');
+}
+
+async function githubFetchRawText(url) {
+  const { key: token } = await getApiKeyWithFallback('github');
+  if (!token) throw new Error('GITHUB_TOKEN not configured');
+
+  const resp = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github.raw',
+    },
+  });
+
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '');
+    throw new Error(`GitHub ${resp.status}: ${txt || url}`);
+  }
+
+  // NOTE: GitHub returns raw bytes; we treat it as UTF-8 text.
+  return await resp.text();
+}
+
+async function getRepoDefaultBranch(repoFullName) {
+  try {
+    const cache = await readRepoFileCache();
+    const cached = cache?.[repoFullName];
+    if (cached?.branch) return cached.branch;
+  } catch {}
+
+  const repoJson = await githubFetchJson(`https://api.github.com/repos/${repoFullName}`);
+  return repoJson?.default_branch || 'main';
+}
+
+async function getFileContentFromGitHub(repoFullName, filePath) {
+  if (!repoFullName) throw new Error('No repo selected');
+  const cleanPath = sanitizeRepoPath(filePath);
+
+  const branch = await getRepoDefaultBranch(repoFullName);
+  const url = `https://api.github.com/repos/${repoFullName}/contents/${encodeGitHubPath(cleanPath)}?ref=${encodeURIComponent(branch)}`;
+
+  const content = await githubFetchRawText(url);
+
+  // Guard against binary files
+  if (content && content.indexOf('\u0000') !== -1) {
+    throw new Error(`File appears to be binary: ${cleanPath}`);
+  }
+
+  const bytes = Buffer.byteLength(content || '', 'utf8');
+  if (bytes > MAX_FILE_BYTES) {
+    throw new Error(`File too large (${bytes} bytes). Max is ${MAX_FILE_BYTES} bytes.`);
+  }
+
+  return content;
 }
 
 async function readRepoFileCache() {
@@ -402,6 +546,25 @@ app.get("/api/projects/:owner/:repo/files", async (req, res) => {
   }
 });
 
+// Fetch the CONTENTS of a single repo file (for UI preview / "open file" flows).
+// This is still explicit-selection only; we never enumerate or inject the full repo.
+app.get("/api/projects/:owner/:repo/file", async (req, res) => {
+  try {
+    const { owner, repo } = req.params;
+    const repoFullName = `${owner}/${repo}`;
+    const filePath = String(req.query.path || '').trim();
+    if (!filePath) return res.status(400).json({ error: 'path is required' });
+
+    const cleanPath = sanitizeRepoPath(filePath);
+    const content = await getFileContentFromGitHub(repoFullName, cleanPath);
+    res.json({ repo: repoFullName, path: cleanPath, content });
+  } catch (e) {
+    console.error('GET /api/projects/:owner/:repo/file error:', e);
+    res.status(500).json({ error: e.message || 'Failed to load file' });
+  }
+});
+
+
 app.get("/api/conversations", async (req, res) => {
   res.json(await readJson(conversationsPath, []));
 });
@@ -425,6 +588,119 @@ app.patch("/api/conversations/:id", async (req, res) => {
   } catch (e) {
     console.error("PATCH /api/conversations/:id error:", e);
     res.status(500).json({ error: "Failed to rename conversation" });
+  }
+});
+
+
+
+// Create a DRAFT PR from a single full-file code block. Never commits to the default branch.
+app.post("/api/pr/create", async (req, res) => {
+  try {
+    const { repoFullName, conversationId, filePath, content, title } = req.body || {};
+
+    if (!repoFullName || typeof repoFullName !== "string") {
+      return res.status(400).json({ error: "repoFullName is required" });
+    }
+    if (!filePath || typeof filePath !== "string") {
+      return res.status(400).json({ error: "filePath is required" });
+    }
+
+    const cleanPath = sanitizeRepoPath(filePath);
+    const cleanContent = stripFilePathHeader(typeof content === "string" ? content : "");
+
+    if (!cleanContent.trim()) {
+      return res.status(400).json({ error: "content is required" });
+    }
+    if (cleanContent.length > 1_500_000) {
+      return res.status(400).json({ error: "content too large" });
+    }
+
+    const repo = await githubFetchJson(`https://api.github.com/repos/${repoFullName}`);
+    const baseBranch = repo.default_branch;
+    if (!baseBranch) throw new Error("Could not determine default_branch");
+
+    const baseRef = await githubFetchJson(
+      `https://api.github.com/repos/${repoFullName}/git/ref/heads/${baseBranch}`
+    );
+    const baseSha = baseRef?.object?.sha;
+    if (!baseSha) throw new Error("Could not read base branch ref sha");
+
+    const safeConvo = String(conversationId || "new")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "")
+      .slice(0, 32);
+
+    // Create a branch name and retry if collision
+    let branch = `ai/${safeConvo}-${Date.now().toString(36)}`;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await githubRequestJson(`https://api.github.com/repos/${repoFullName}/git/refs`, {
+          method: "POST",
+          body: { ref: `refs/heads/${branch}`, sha: baseSha },
+        });
+        break;
+      } catch (e) {
+        if (attempt === 2 || e?.status !== 422) throw e;
+        branch = `ai/${safeConvo}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      }
+    }
+
+    // Build a single commit with Git Data API (blob -> tree -> commit -> ref)
+    const baseCommit = await githubFetchJson(
+      `https://api.github.com/repos/${repoFullName}/git/commits/${baseSha}`
+    );
+    const baseTreeSha = baseCommit?.tree?.sha;
+    if (!baseTreeSha) throw new Error("Could not read base tree sha");
+
+    const blob = await githubRequestJson(
+      `https://api.github.com/repos/${repoFullName}/git/blobs`,
+      { method: "POST", body: { content: cleanContent, encoding: "utf-8" } }
+    );
+    if (!blob?.sha) throw new Error("Failed to create blob");
+
+    const newTree = await githubRequestJson(
+      `https://api.github.com/repos/${repoFullName}/git/trees`,
+      {
+        method: "POST",
+        body: {
+          base_tree: baseTreeSha,
+          tree: [{ path: cleanPath, mode: "100644", type: "blob", sha: blob.sha }],
+        },
+      }
+    );
+    if (!newTree?.sha) throw new Error("Failed to create tree");
+
+    const commitMessage = (typeof title === "string" && title.trim())
+      ? title.trim().slice(0, 120)
+      : `AI patch: ${cleanPath}`;
+
+    const commit = await githubRequestJson(
+      `https://api.github.com/repos/${repoFullName}/git/commits`,
+      { method: "POST", body: { message: commitMessage, tree: newTree.sha, parents: [baseSha] } }
+    );
+    if (!commit?.sha) throw new Error("Failed to create commit");
+
+    await githubRequestJson(
+      `https://api.github.com/repos/${repoFullName}/git/refs/heads/${branch}`,
+      { method: "PATCH", body: { sha: commit.sha, force: false } }
+    );
+
+    const pr = await githubRequestJson(`https://api.github.com/repos/${repoFullName}/pulls`, {
+      method: "POST",
+      body: {
+        title: commitMessage,
+        head: branch,
+        base: baseBranch,
+        body: "Created by AI Code Helper",
+        draft: true,
+      },
+    });
+    if (!pr?.html_url) throw new Error("Failed to create PR");
+
+    res.json({ prUrl: pr.html_url, branch, base: baseBranch, prNumber: pr.number });
+  } catch (e) {
+    console.error("POST /api/pr/create error:", e);
+    res.status(500).json({ error: e.message || "Create PR failed" });
   }
 });
 
@@ -468,9 +744,30 @@ app.post("/api/chat", async (req, res) => {
     // IMPORTANT: fileContents must only include explicitly selected files.
     // Your repo file LIST is separate and should never be injected into prompts.
     const fileContents = {};
-    for (const f of loadedFiles) {
-      // TODO: restore your GitHub file content logic here (explicit selection only)
-      // fileContents[f] = await getFileContent(repoFullName, f);
+    const selectedFiles = Array.isArray(loadedFiles)
+      ? loadedFiles.filter((x) => typeof x === "string" && x.trim())
+      : [];
+
+    // Deterministic order + safety caps
+    const unique = [];
+    const seen = new Set();
+    for (const f of selectedFiles) {
+      const k = f.trim();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      unique.push(k);
+    }
+    unique.sort();
+
+    const limited = unique.slice(0, MAX_FILES_PER_CHAT);
+    for (const f of limited) {
+      try {
+        fileContents[f] = await getFileContentFromGitHub(repoFullName, f);
+      } catch (e) {
+        // We skip unreadable/too-large files rather than failing the whole chat.
+        // (The user can select fewer files or smaller files.)
+        console.warn(`Skipping file '${f}':`, e?.message || e);
+      }
     }
 
     // Compaction: If history is too long, summarize it
